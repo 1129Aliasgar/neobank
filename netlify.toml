@@ -1,9 +1,12 @@
 # Netlify configuration for the Next.js frontend.
 #
-# In the Netlify UI set "Base directory" to `frontend` (this repo is a
-# backend/ + frontend/ monorepo). Netlify detects Next.js 16 and uses its
-# OpenNext adapter automatically, so no `publish` directory or redirects are
-# needed here — it manages `.next` itself.
+# This repo is a backend/ + frontend/ monorepo, so the build runs in
+# `frontend` and publishes the Next.js output.
+#
+# The Next.js Runtime (`@netlify/plugin-nextjs`) is declared explicitly below.
+# Without it Netlify treats the build as a static site and publishes the raw
+# `.next` directory: `/BUILD_ID` and `/server/app/page.js` become downloadable
+# and every real route answers 404. Do not remove the plugin block.
 #
 # Connect this repository in Netlify (or run `netlify deploy --build`) rather
 # than dragging the folder into "Deploy manually": a manual deploy copies files
@@ -18,13 +21,19 @@
 [build]
   base = "frontend"
   command = "npm run build"
-  # The Next.js runtime turns this build into Netlify Functions + static
-  # assets. Leaving it unset (or pointing at the source directory) publishes
-  # the repository files, which is why the site answered 404 at `/`.
+  # The runtime consumes `.next` and emits Netlify Functions + edge routing.
+  # A plain static publish of this directory (no plugin) is what produced the
+  # downloadable `/server/app/page.js` and the 404s on every route.
   publish = ".next"
 
 [build.environment]
   NODE_VERSION = "22"
+
+# The Next.js Runtime / OpenNext adapter. It turns the build into Netlify
+# Functions (SSR, route handlers, server actions) plus edge routing. Declared
+# here instead of relying on framework auto-detection.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
 
 [[headers]]
   for = "/*"

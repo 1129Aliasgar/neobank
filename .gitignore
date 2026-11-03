@@ -78,6 +78,9 @@ web_modules/
 .next
 out
 
+# Netlify build output
+.netlify
+
 # Nuxt.js build / generate output
 .nuxt
 dist
