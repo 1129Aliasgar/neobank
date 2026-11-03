@@ -35,3 +35,28 @@ export const AUTH_ERRORS = {
   NO_MEMBERSHIP: "This account has no active business membership",
   BUSINESS_UNAVAILABLE: "This business account is not available",
 } as const;
+
+export const BUSINESS_ERRORS = {
+  NOT_FOUND: "Business not found",
+  NOT_EDITABLE: "This business can no longer be edited",
+  IDENTITY_LOCKED:
+    "Legal name, business type and registration number cannot change after verification",
+  PROFILE_INCOMPLETE: "Complete the business profile before starting verification",
+  ALREADY_VERIFIED: "This business is already verified",
+} as const;
+
+export const VERIFICATION_ERRORS = {
+  IN_REVIEW: "This verification is still under review",
+  NOT_ACTIVE: "There is no active verification to resume",
+  ALREADY_ACTIVE: "A verification is already in progress",
+  PROVIDER_UNAVAILABLE:
+    "The verification provider is unavailable. Please try again.",
+  SIMULATOR_DISABLED: "The verification simulator is not enabled",
+  UNKNOWN_TRANSITION: "This verification update cannot be applied",
+} as const;
+
+export const WEBHOOK_ERRORS = {
+  INVALID_SIGNATURE: "Invalid webhook signature",
+  STALE_TIMESTAMP: "Webhook timestamp is outside the accepted window",
+  MALFORMED_PAYLOAD: "Malformed webhook payload",
+} as const;

@@ -132,6 +132,17 @@ server.setConfig((app: Application) => {
   /* JSON responses compress on anything above ~1 KB. */
   app.use(compression());
 
+  /*
+   * Webhooks are the one route that needs the exact transmitted bytes: HMAC is
+   * computed over them, and parse-then-stringify breaks the signature. Mounted
+   * before the JSON parser so `req.body` stays a Buffer. The raw parser marks
+   * the request as read, so `express.json` below skips it.
+   */
+  app.use(
+    "/api/v1/webhooks",
+    express.raw({ type: "application/json", limit: "256kb" }),
+  );
+
   app.use(express.json({ limit: "16kb" }));
   app.use(express.urlencoded({ extended: true, limit: "16kb" }));
   app.use(cookieParser());

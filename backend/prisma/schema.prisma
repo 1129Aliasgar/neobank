@@ -1,11 +1,12 @@
 /**
  * NeoBank — core schema.
- *
  * Module order: identity (User) → business (Business / BusinessMember /
  * Verification) → money (Account / LedgerTransaction / LedgerEntry) → cards →
  * payments → reconciliation. Each module is added when its rules are designed,
  * never as a placeholder.
- *
+ * Module 1 owns the business onboarding and KYB surface. Provider events and
+ * operator-visible actions get their own tables even this early: a verification
+ * that cannot be explained afterwards is worse than no verification.
  * @author aliasgarbootwala3@gmail.com
  */
 
@@ -27,7 +28,6 @@ datasource db {
 
 /**
  * Who the person is inside the business.
- *
  * The role lives on the membership, not on the user: the same person may be an
  * ADMIN at one business and an EMPLOYEE at another. `OPERATIONS` is the
  * internal Corgi-style operator who can view webhooks, ledger history and
@@ -40,39 +40,91 @@ enum UserRole {
   OPERATIONS
 }
 
-/** Lifecycle of a business account. Only ACTIVE may transact. */
+/**
+ * Legal form of the business. US entities only in v1.
+ */
+enum BusinessType {
+  LLC
+  CORPORATION
+  PARTNERSHIP
+  SOLE_PROPRIETORSHIP
+}
+
+/**
+ * Lifecycle of a business account.
+ * This answers "may this business transact?" and nothing else. What the
+ * provider said about a specific attempt lives on `Verification.status`.
+ * `SUSPENDED` and `CLOSED` are operator actions and are never set by a webhook.
+ */
 enum BusinessStatus {
   PENDING_VERIFICATION
   ACTIVE
+  REJECTED
   SUSPENDED
   CLOSED
 }
 
 /**
  * Membership lifecycle. INVITED is a row created by an OWNER/ADMIN before the
- * person accepts; REMOVED keeps the audit trail instead of deleting the row.
+ * person accepts; DISABLED keeps the audit trail instead of deleting the row.
  */
 enum MembershipStatus {
   INVITED
   ACTIVE
-  REMOVED
+  DISABLED
 }
 
 /**
- * Sumsub-style applicant state. `NOT_STARTED` exists so a business can be
- * created before the hosted flow is opened; nothing may transact until
- * APPROVED.
+ * Verification attempt state.
+ * Five values, deliberately: the API and the UI only ever reason about these.
+ * The provider's raw string is kept in `Verification.providerStatus`, so
+ * "Declined" and "Abandoned" stay distinguishable even though both map to
+ * REJECTED here.
  */
 enum VerificationStatus {
   NOT_STARTED
   PENDING
   APPROVED
   REJECTED
-  ON_HOLD
+  REVIEW
 }
 
 enum VerificationProvider {
+  DIDIT
+  /// The labelled dev-only simulator. Kept as a distinct value so a simulated
+  /// approval can never be read back as a real Didit decision.
+  SIMULATOR
+  /// Retained so historical or synthetic rows stay valid; not used by Module 1.
   SUMSUB
+}
+
+/**
+ * Whether an attempt ran against a real provider or the sandbox.
+ * Stored rather than inferred: a reviewer must be able to prove from the
+ * database alone that an approval was simulated.
+ */
+enum VerificationEnvironment {
+  SANDBOX
+  LIVE
+}
+
+enum WebhookProvider {
+  DIDIT
+  /// Added in Module 3 with Stripe.
+  STRIPE
+}
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+enum AuditActorType {
+  USER
+  SYSTEM
+  AGENT
 }
 
 // ==========================================
@@ -131,34 +183,51 @@ model BlacklistToken {
 
 /**
  * The customer entity that owns the account, cards and money.
- *
  * One business per registration in the MVP; the schema already allows a user
  * to belong to several through `BusinessMember`, so a future "switch company"
  * feature does not need a data migration.
+ * Profile columns are nullable on purpose: registration only knows the legal
+ * name, and "profile complete" is a rule evaluated when verification starts,
+ * not a set of database defaults with placeholder values.
  */
 model Business {
   id          String  @id @default(cuid())
   legalName   String
   tradingName String?
 
-  /// ISO 3166-1 alpha-2. Compliance/KYC is country-dependent.
-  country String @default("US") @db.Char(2)
+  businessType BusinessType?
+
+  /// Optional: pre-fills the company registry search. Never a tax id.
+  registrationNumber String?
+
+  // Contact / profile
+  industry    String?
+  description String?
+  email       String?
+  phone       String?
+  website     String?
+
+  // Registered address (US only in v1)
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String? @db.Char(2)
+  postalCode   String?
+  country      String  @default("US") @db.Char(2)
 
   /// ISO 4217. The MVP opens USD accounts only; the column keeps it explicit.
   currency String @default("USD") @db.Char(3)
 
-  /// Company registration / tax identifier supplied during onboarding.
-  registrationNumber String?
-  taxId              String?
-
   status BusinessStatus @default(PENDING_VERIFICATION)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   // Relationships
   members       BusinessMember[]
   verifications Verification[]
+  webhookEvents WebhookEvent[]
+  auditLogs     AuditLog[]
 
   @@index([status, createdAt])
 }
@@ -169,9 +238,8 @@ model Business {
 
 /**
  * The join between a person and a business, and the only place a role is held.
- *
  * `@@unique([businessId, userId])` means one membership per person per
- * business; removing someone sets `status = REMOVED` so their historical
+ * business; removing someone sets `status = DISABLED` so their historical
  * approvals still resolve to a real user.
  */
 model BusinessMember {
@@ -184,8 +252,8 @@ model BusinessMember {
 
   joinedAt DateTime?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   // Relationships
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
@@ -201,34 +269,130 @@ model BusinessMember {
 // ==========================================
 
 /**
- * A KYC/KYB attempt.
- *
- * Kept as its own row rather than fields on `Business` because a rejected
- * applicant re-submits, and the previous decision must remain auditable.
- * `providerApplicantId` is the idempotency key for webhook callbacks.
+ * One KYB attempt.
+ * A row per attempt, never fields on `Business`: a rejected business retries,
+ * and the earlier decision has to stay auditable. `providerSessionId` is unique
+ * because it is the join key a webhook arrives with.
  */
 model Verification {
   id         String @id @default(cuid())
   businessId String
 
-  provider          VerificationProvider
-  providerApplicantId String? @unique
-  levelName           String?
+  provider VerificationProvider @default(DIDIT)
 
-  status          VerificationStatus @default(NOT_STARTED)
+  /// Didit `session_id`.
+  providerSessionId String? @unique
+
+  /// Didit `workflow_id` used for this attempt. A workflow can be republished,
+  /// so an old attempt must still record which definition produced its result.
+  workflowId String?
+
+  environment     VerificationEnvironment @default(SANDBOX)
+  /// Armed sandbox scenario slug, when the demo used one.
+  sandboxScenario String?
+
+  status VerificationStatus @default(NOT_STARTED)
+
+  /// Raw provider status, e.g. "Declined" or "Abandoned".
+  providerStatus String?
+
+  /// Sanitised decision subset for support. Never documents or personal data.
+  reviewResult Json?
+
   rejectionReason String?
+  /// True when the provider is waiting on the user (e.g. "Awaiting User").
+  actionRequired  Boolean @default(false)
 
-  /// Provider payload subset for support/debugging. Never store documents here.
-  providerData Json?
+  attemptNumber Int @default(1)
 
-  reviewedAt DateTime?
+  submittedAt  DateTime? @db.Timestamptz(3)
+  reviewedAt   DateTime? @db.Timestamptz(3)
+  lastSyncedAt DateTime? @db.Timestamptz(3)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   // Relationships
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId, createdAt])
   @@index([status])
+}
+
+// ==========================================
+// 6. WEBHOOK EVENT
+// ==========================================
+
+/**
+ * The idempotency boundary.
+ * The row is inserted before the state change is applied, so a redelivery
+ * collides with `@@unique([provider, providerEventId])` and the financial or
+ * verification effect is never repeated.
+ */
+model WebhookEvent {
+  id       String          @id @default(cuid())
+  provider WebhookProvider
+
+  /// Didit `event_id`, stable across retries.
+  providerEventId String
+
+  eventType  String
+  businessId String?
+  /// Provider session / resource id.
+  resourceId String?
+
+  /// Sanitised body only. Never documents, names, emails or phone numbers.
+  payload Json
+
+  /// Provider `created_at`, used to reject out-of-order deliveries.
+  providerCreatedAt DateTime? @db.Timestamptz(3)
+
+  signatureVerified Boolean       @default(false)
+  status            WebhookStatus @default(RECEIVED)
+  attemptCount      Int           @default(0)
+
+  receivedAt  DateTime  @default(now()) @db.Timestamptz(3)
+  processedAt DateTime? @db.Timestamptz(3)
+  lastError   String?
+
+  // Relationships
+  business Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, providerEventId])
+  @@index([provider, status, receivedAt])
+  @@index([businessId, receivedAt])
+}
+
+// ==========================================
+// 7. AUDIT LOG
+// ==========================================
+
+/**
+ * "Who changed what, when" for the parts of the product a customer or an
+ * operator will later ask about.
+ * Not a ledger: audit rows describe intent and decisions, ledger entries
+ * describe money. Never mix them.
+ */
+model AuditLog {
+  id         String  @id @default(cuid())
+  businessId String?
+
+  actorType AuditActorType
+  /// userId or agentId; null for system actions.
+  actorId   String?
+
+  action       String
+  resourceType String
+  resourceId   String
+
+  /// Sanitised context only: changed field *names*, never values.
+  metadata Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  // Relationships
+  business Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, createdAt])
+  @@index([action, createdAt])
 }

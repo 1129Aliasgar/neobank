@@ -1,4 +1,10 @@
 /**
+ * Domain vocabulary shared by services, validators and the API layer.
+ *
+ * These objects mirror the Prisma enums. They exist so a service can compare
+ * against `BUSINESS_STATUS.ACTIVE` instead of a loose string, and so the
+ * compiler catches a typo in a state transition.
+ *
  * @author aliasgarbootwala3@gmail.com
  */
 
@@ -13,6 +19,8 @@ export const STATUS_CODE = {
   INPROCESSABLE_ENTITY: 422,
   TOO_MANY_REQUESTS: 429,
   INTERNAL_SERVER_ERROR: 500,
+  BAD_GATEWAY: 502,
+  SERVICE_UNAVAILABLE: 503,
 } as const;
 
 /**
@@ -22,6 +30,11 @@ export const STATUS_CODE = {
  * - ADMIN       manages the team, cards and payment approvals
  * - EMPLOYEE    uses an assigned card and initiates payment requests
  * - OPERATIONS  platform operator: reads webhooks / ledger / breaks, never money
+ *
+ * Public registration always creates an OWNER. There is no "business" role:
+ * the business is the tenant, not a permission level, and the first person in
+ * it owns it. Adding a fifth role would add a branch to every authorisation
+ * check without modelling anything the four cannot express.
  *
  * The initiator/approver split is a permission check, not a role of its own:
  * any OWNER or ADMIN can approve, except the person who made the request.
@@ -49,6 +62,12 @@ export const BUSINESS_ROLES: UserRole[] = [
 /** Roles allowed to approve another person's payment above the threshold. */
 export const APPROVER_ROLES: UserRole[] = [USER_ROLE.OWNER, USER_ROLE.ADMIN];
 
+/** Roles allowed to change the business profile and start a KYB check. */
+export const BUSINESS_ADMIN_ROLES: UserRole[] = [
+  USER_ROLE.OWNER,
+  USER_ROLE.ADMIN,
+];
+
 /**
  * Business lifecycle. Only `ACTIVE` may open accounts, issue cards or move
  * money; `SUSPENDED` is a reversible compliance hold.
@@ -56,6 +75,7 @@ export const APPROVER_ROLES: UserRole[] = [USER_ROLE.OWNER, USER_ROLE.ADMIN];
 export const BUSINESS_STATUS = {
   PENDING_VERIFICATION: "PENDING_VERIFICATION",
   ACTIVE: "ACTIVE",
+  REJECTED: "REJECTED",
   SUSPENDED: "SUSPENDED",
   CLOSED: "CLOSED",
 } as const;
@@ -63,22 +83,128 @@ export const BUSINESS_STATUS = {
 export type BusinessStatus =
   (typeof BUSINESS_STATUS)[keyof typeof BUSINESS_STATUS];
 
+export const BUSINESS_TYPE = {
+  LLC: "LLC",
+  CORPORATION: "CORPORATION",
+  PARTNERSHIP: "PARTNERSHIP",
+  SOLE_PROPRIETORSHIP: "SOLE_PROPRIETORSHIP",
+} as const;
+
+export type BusinessType = (typeof BUSINESS_TYPE)[keyof typeof BUSINESS_TYPE];
+
+export const BUSINESS_TYPES: BusinessType[] = Object.values(BUSINESS_TYPE);
+
 export const MEMBERSHIP_STATUS = {
   INVITED: "INVITED",
   ACTIVE: "ACTIVE",
-  REMOVED: "REMOVED",
+  DISABLED: "DISABLED",
 } as const;
 
 export type MembershipStatus =
   (typeof MEMBERSHIP_STATUS)[keyof typeof MEMBERSHIP_STATUS];
 
+/**
+ * Verification attempt state. Five values, deliberately: the API and the UI
+ * only reason about these, and the provider's raw string is stored separately.
+ */
 export const VERIFICATION_STATUS = {
   NOT_STARTED: "NOT_STARTED",
   PENDING: "PENDING",
   APPROVED: "APPROVED",
   REJECTED: "REJECTED",
-  ON_HOLD: "ON_HOLD",
+  REVIEW: "REVIEW",
 } as const;
 
 export type VerificationStatus =
   (typeof VERIFICATION_STATUS)[keyof typeof VERIFICATION_STATUS];
+
+/** Statuses during which a business may not start a second attempt. */
+export const ACTIVE_VERIFICATION_STATUSES: VerificationStatus[] = [
+  VERIFICATION_STATUS.NOT_STARTED,
+  VERIFICATION_STATUS.PENDING,
+  VERIFICATION_STATUS.REVIEW,
+];
+
+export const VERIFICATION_ENVIRONMENT = {
+  SANDBOX: "SANDBOX",
+  LIVE: "LIVE",
+} as const;
+
+export type VerificationEnvironment =
+  (typeof VERIFICATION_ENVIRONMENT)[keyof typeof VERIFICATION_ENVIRONMENT];
+
+/**
+ * What the onboarding UI should do next.
+ *
+ * Derived on every read from profile completeness + the latest attempt +
+ * business status. Never stored: a stored copy is a second source of truth
+ * that drifts the first time a webhook lands out of order.
+ */
+export const ONBOARDING_STEP = {
+  COMPLETE_PROFILE: "COMPLETE_PROFILE",
+  START_VERIFICATION: "START_VERIFICATION",
+  OPEN_VERIFICATION: "OPEN_VERIFICATION",
+  WAIT_FOR_REVIEW: "WAIT_FOR_REVIEW",
+  RETURN_TO_PROVIDER: "RETURN_TO_PROVIDER",
+  FIX_AND_RETRY: "FIX_AND_RETRY",
+  DONE: "DONE",
+  CONTACT_SUPPORT: "CONTACT_SUPPORT",
+} as const;
+
+export type OnboardingStep =
+  (typeof ONBOARDING_STEP)[keyof typeof ONBOARDING_STEP];
+
+/** Who caused an audited action. Mirrors the Prisma enum. */
+export const AUDIT_ACTOR_TYPE = {
+  USER: "USER",
+  SYSTEM: "SYSTEM",
+  AGENT: "AGENT",
+} as const;
+
+export type AuditActorType =
+  (typeof AUDIT_ACTOR_TYPE)[keyof typeof AUDIT_ACTOR_TYPE];
+
+/**
+ * Provider that produced an attempt. `SIMULATOR` is the labelled dev-only
+ * fallback: an approval it returns can never be mistaken for a real decision.
+ */
+export const VERIFICATION_PROVIDER = {
+  DIDIT: "DIDIT",
+  SIMULATOR: "SIMULATOR",
+  SUMSUB: "SUMSUB",
+} as const;
+
+export type VerificationProvider =
+  (typeof VERIFICATION_PROVIDER)[keyof typeof VERIFICATION_PROVIDER];
+
+/** Sessions/tickets that a provider can still act on. */
+export const WEBHOOK_STATUS = {
+  RECEIVED: "RECEIVED",
+  PROCESSING: "PROCESSING",
+  PROCESSED: "PROCESSED",
+  FAILED: "FAILED",
+} as const;
+
+/** Audit actions written by Module 1. Strings stay stable across releases. */
+export const AUDIT_ACTION = {
+  BUSINESS_PROFILE_UPDATED: "BUSINESS_PROFILE_UPDATED",
+  VERIFICATION_STARTED: "VERIFICATION_STARTED",
+  VERIFICATION_STATUS_CHANGED: "VERIFICATION_STATUS_CHANGED",
+} as const;
+
+export type WebhookStatus =
+  (typeof WEBHOOK_STATUS)[keyof typeof WEBHOOK_STATUS];
+
+/**
+ * The auth cookie name.
+ *
+ * In production the `__Host-` prefix is used: the browser refuses to accept
+ * such a cookie unless it is `Secure`, `Path=/` and has no `Domain` attribute.
+ * That is the defence against **cookie tossing** — a sibling subdomain cannot
+ * overwrite it with `Domain=.example.com`, because the prefix makes the
+ * injection invalid and the browser keeps the host-only cookie.
+ */
+export const AUTH_COOKIE_NAME = "__Host-neobank_token";
+export const AUTH_COOKIE_NAME_DEV = "neobank_token";
+/** Legacy name kept only so logout can actively clear it. */
+export const LEGACY_AUTH_COOKIE_NAME = "token";

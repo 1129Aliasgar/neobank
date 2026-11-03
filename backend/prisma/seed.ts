@@ -1,13 +1,16 @@
 /**
  * Demo seed.
  *
- * Idempotent: running it twice leaves the same demo business and four members,
- * with passwords reset to the documented demo value. Never point this at a
- * database that holds anything you care about.
+ * Idempotent: running it twice leaves the same businesses and users, with
+ * passwords reset to the documented demo value. Never point this at a database
+ * that holds anything you care about.
  *
- * Roles live on `BusinessMember`, so the demo business is created first and
- * each user is attached to it. The owner row is what a real registration
- * produces.
+ * Two states are seeded on purpose:
+ *
+ * - `NeoBank Demo Co` is fully onboarded and `ACTIVE`, with a synthetic
+ *   APPROVED sandbox attempt, so the post-onboarding dashboard can be opened.
+ * - `NeoBank Pending Co` is freshly registered and incomplete, so the
+ *   profile → verification journey can be walked from the beginning.
  *
  * Usage: npm run db:seed
  *
@@ -20,8 +23,13 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import {
   BUSINESS_STATUS,
+  BUSINESS_TYPE,
   MEMBERSHIP_STATUS,
   USER_ROLE,
+  VERIFICATION_ENVIRONMENT,
+  VERIFICATION_PROVIDER,
+  VERIFICATION_STATUS,
+  type BusinessStatus,
   type UserRole,
 } from "../src/constants/constants.js";
 
@@ -36,79 +44,209 @@ const prisma = new PrismaClient({
 });
 
 const DEMO_PASSWORD = "NeoBank@123";
-const DEMO_BUSINESS = "NeoBank Demo Co";
 
-const demoUsers: Array<{
+interface DemoUser {
   username: string;
   email: string;
   role: UserRole;
-}> = [
-  { username: "owner", email: "owner@neobank.dev", role: USER_ROLE.OWNER },
-  { username: "admin", email: "admin@neobank.dev", role: USER_ROLE.ADMIN },
+}
+
+interface DemoBusiness {
+  legalName: string;
+  status: BusinessStatus;
+  complete: boolean;
+  users: DemoUser[];
+}
+
+const demoBusinesses: DemoBusiness[] = [
   {
-    username: "employee",
-    email: "employee@neobank.dev",
-    role: USER_ROLE.EMPLOYEE,
+    legalName: "NeoBank Demo Co",
+    status: BUSINESS_STATUS.ACTIVE,
+    complete: true,
+    users: [
+      { username: "owner", email: "owner@neobank.dev", role: USER_ROLE.OWNER },
+      { username: "admin", email: "admin@neobank.dev", role: USER_ROLE.ADMIN },
+      {
+        username: "employee",
+        email: "employee@neobank.dev",
+        role: USER_ROLE.EMPLOYEE,
+      },
+      {
+        username: "ops",
+        email: "ops@neobank.dev",
+        role: USER_ROLE.OPERATIONS,
+      },
+    ],
   },
-  { username: "ops", email: "ops@neobank.dev", role: USER_ROLE.OPERATIONS },
+  {
+    legalName: "NeoBank Pending Co",
+    status: BUSINESS_STATUS.PENDING_VERIFICATION,
+    complete: false,
+    users: [
+      {
+        username: "pending",
+        email: "pending@neobank.dev",
+        role: USER_ROLE.OWNER,
+      },
+    ],
+  },
 ];
+
+/** Profile values for the completed demo business (all fictional). */
+const COMPLETE_PROFILE = {
+  tradingName: "Demo Co",
+  businessType: BUSINESS_TYPE.LLC,
+  registrationNumber: "SEED-LLC-0001",
+  industry: "Software",
+  description: "Seeded business for the Module 1 onboarding walkthrough.",
+  email: "ops@neobank.dev",
+  phone: "+14155550123",
+  website: "https://neobank.dev",
+  addressLine1: "123 Market Street",
+  addressLine2: "Suite 400",
+  city: "San Francisco",
+  state: "CA",
+  postalCode: "94105",
+  country: "US",
+} as const;
+
+async function seedBusiness(demo: DemoBusiness): Promise<string> {
+  const existing = await prisma.business.findFirst({
+    where: { legalName: demo.legalName },
+  });
+
+  const profile = demo.complete
+    ? COMPLETE_PROFILE
+    : {
+        businessType: null,
+        registrationNumber: null,
+        industry: null,
+        description: null,
+        email: null,
+        phone: null,
+        website: null,
+        addressLine1: null,
+        addressLine2: null,
+        city: null,
+        state: null,
+        postalCode: null,
+      };
+
+  const business = existing
+    ? await prisma.business.update({
+        where: { id: existing.id },
+        data: {
+          ...profile,
+          country: "US",
+          currency: "USD",
+          status: demo.status,
+        },
+      })
+    : await prisma.business.create({
+        data: {
+          ...profile,
+          legalName: demo.legalName,
+          country: "US",
+          currency: "USD",
+          status: demo.status,
+        },
+      });
+
+  return business.id;
+}
+
+async function seedVerification(businessId: string): Promise<void> {
+  /*
+   * A synthetic approval for the demo business. `environment = SANDBOX` and a
+   * scenario slug make it obvious in the API and the UI that this is not a
+   * real KYB decision.
+   */
+  await prisma.verification.upsert({
+    where: { providerSessionId: "seed-demo-kyb-session" },
+    create: {
+      businessId,
+      provider: VERIFICATION_PROVIDER.DIDIT,
+      providerSessionId: "seed-demo-kyb-session",
+      workflowId: "seed-workflow",
+      environment: VERIFICATION_ENVIRONMENT.SANDBOX,
+      sandboxScenario: "approve",
+      status: VERIFICATION_STATUS.APPROVED,
+      providerStatus: "Approved",
+      reviewResult: {
+        status: "Approved",
+        rejectLabels: [],
+        warnings: [],
+      },
+      attemptNumber: 1,
+      submittedAt: new Date(),
+      reviewedAt: new Date(),
+      lastSyncedAt: new Date(),
+    },
+    update: {
+      businessId,
+      status: VERIFICATION_STATUS.APPROVED,
+      providerStatus: "Approved",
+      environment: VERIFICATION_ENVIRONMENT.SANDBOX,
+      sandboxScenario: "approve",
+      reviewedAt: new Date(),
+    },
+  });
+}
 
 async function main() {
   const password = await bcrypt.hash(DEMO_PASSWORD, 10);
 
-  const business =
-    (await prisma.business.findFirst({
-      where: { legalName: DEMO_BUSINESS },
-    })) ??
-    (await prisma.business.create({
-      data: {
-        legalName: DEMO_BUSINESS,
-        country: "US",
-        currency: "USD",
-        status: BUSINESS_STATUS.ACTIVE,
-      },
-    }));
+  for (const demo of demoBusinesses) {
+    const businessId = await seedBusiness(demo);
 
-  for (const demo of demoUsers) {
-    const user = await prisma.user.upsert({
-      where: { email: demo.email },
-      create: {
-        username: demo.username,
-        email: demo.email,
-        password,
-      },
-      update: {
-        username: demo.username,
-        password,
-        isDeleted: false,
-        deletedAt: null,
-      },
-    });
-
-    await prisma.businessMember.upsert({
-      where: {
-        businessId_userId: {
-          businessId: business.id,
-          userId: user.id,
+    for (const demoUser of demo.users) {
+      const user = await prisma.user.upsert({
+        where: { email: demoUser.email },
+        create: {
+          username: demoUser.username,
+          email: demoUser.email,
+          password,
         },
-      },
-      create: {
-        businessId: business.id,
-        userId: user.id,
-        role: demo.role,
-        status: MEMBERSHIP_STATUS.ACTIVE,
-        joinedAt: new Date(),
-      },
-      update: {
-        role: demo.role,
-        status: MEMBERSHIP_STATUS.ACTIVE,
-      },
-    });
+        update: {
+          username: demoUser.username,
+          password,
+          isDeleted: false,
+          deletedAt: null,
+        },
+      });
 
-    console.log(`seeded ${demo.role.padEnd(10)} ${demo.email}`);
+      await prisma.businessMember.upsert({
+        where: {
+          businessId_userId: {
+            businessId,
+            userId: user.id,
+          },
+        },
+        create: {
+          businessId,
+          userId: user.id,
+          role: demoUser.role,
+          status: MEMBERSHIP_STATUS.ACTIVE,
+          joinedAt: new Date(),
+        },
+        update: {
+          role: demoUser.role,
+          status: MEMBERSHIP_STATUS.ACTIVE,
+        },
+      });
+
+      console.log(
+        `seeded ${demo.legalName} · ${demoUser.role.padEnd(10)} ${demoUser.email}`,
+      );
+    }
+
+    if (demo.complete) {
+      await seedVerification(businessId);
+    }
+
+    console.log(`  business ${businessId} (${demo.status})\n`);
   }
 
-  console.log(`\nBusiness: ${business.legalName} (${business.id})`);
   console.log(`Demo password for all accounts: ${DEMO_PASSWORD}`);
 }
 

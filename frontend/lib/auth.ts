@@ -13,8 +13,19 @@ export type UserRole = "OWNER" | "ADMIN" | "EMPLOYEE" | "OPERATIONS";
 export type BusinessStatus =
   | "PENDING_VERIFICATION"
   | "ACTIVE"
+  | "REJECTED"
   | "SUSPENDED"
   | "CLOSED";
+
+export type OnboardingStep =
+  | "COMPLETE_PROFILE"
+  | "START_VERIFICATION"
+  | "OPEN_VERIFICATION"
+  | "WAIT_FOR_REVIEW"
+  | "RETURN_TO_PROVIDER"
+  | "FIX_AND_RETRY"
+  | "DONE"
+  | "CONTACT_SUPPORT";
 
 export interface BusinessSummary {
   id: string;
@@ -33,9 +44,21 @@ export interface UserProfile {
   updatedAt: string;
 }
 
+/** Routing hint from the server; `GET /businesses/current` is authoritative. */
+export interface OnboardingHint {
+  profileComplete: boolean;
+  nextStep: OnboardingStep;
+}
+
 export interface AuthResult {
   user: UserProfile;
   token: string;
+  onboarding: OnboardingHint;
+}
+
+export interface SessionResult {
+  user: UserProfile;
+  onboarding: OnboardingHint;
 }
 
 export interface RegisterInput {
@@ -76,18 +99,20 @@ export const authApi = {
     return data.data;
   },
 
-  async profile(): Promise<UserProfile> {
+  /** Authoritative session read; `/auth/profile` is kept as an alias. */
+  async session(): Promise<SessionResult> {
     const { data } =
-      await api.get<ApiSuccess<{ user: UserProfile }>>("/auth/profile");
+      await api.get<ApiSuccess<SessionResult>>("/auth/me");
 
-    return data.data.user;
+    return data.data;
   },
 
   async logout(): Promise<void> {
     try {
       await api.post("/auth/logout");
+    } catch {
+      /* An already-invalid token is still a successful local sign-out. */
     } finally {
-      /* Clear locally even if the server call failed: the UI must log out. */
       tokenStore.clear();
     }
   },

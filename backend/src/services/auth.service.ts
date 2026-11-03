@@ -20,9 +20,14 @@ import {
   RegisterUserInput,
   UserProfile,
 } from "../types/user.types.js";
-import type { BusinessSummary } from "../types/business.types.js";
+import type {
+  BusinessSummary,
+  OnboardingHint,
+  ProfileCompletenessInput,
+} from "../types/business.types.js";
 import Logger from "../utils/logger.js";
 import AuthRepository from "../repositories/auth.repository.js";
+import { deriveAuthNextStep, isProfileComplete } from "../utils/onboarding.js";
 import {
   BUSINESS_STATUS,
   STATUS_CODE,
@@ -31,16 +36,11 @@ import {
 } from "../constants/constants.js";
 import { AUTH_ERRORS, USER_ERRORS } from "../constants/error.js";
 import ApiError from "../utils/apiError.js";
+import { isUniqueConstraintViolation } from "../utils/prismaError.js";
 
-/** Prisma's unique-constraint error code. */
-function isUniqueConstraintViolation(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === "P2002"
-  );
-}
+type BusinessForOnboarding = ProfileCompletenessInput & {
+  status: BusinessStatus;
+};
 
 @injectable()
 export default class AuthService {
@@ -134,6 +134,7 @@ export default class AuthService {
     return {
       user: this.toProfile(user, business, membership.role),
       token,
+      onboarding: this.toOnboarding(business),
     };
   }
 
@@ -218,6 +219,7 @@ export default class AuthService {
     return {
       user: this.toProfile(user, membership.business, membership.role),
       token,
+      onboarding: this.toOnboarding(membership.business),
     };
   }
 
@@ -256,6 +258,7 @@ export default class AuthService {
         membership.business,
         membership.role,
       ),
+      onboarding: this.toOnboarding(membership.business),
     };
   }
 
@@ -323,6 +326,17 @@ export default class AuthService {
       business: summary,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
+    };
+  }
+
+  /**
+   * Routing hint only. The authoritative state — including the latest attempt
+   * and what the UI should do about it — is `GET /businesses/current`.
+   */
+  private toOnboarding(business: BusinessForOnboarding): OnboardingHint {
+    return {
+      profileComplete: isProfileComplete(business),
+      nextStep: deriveAuthNextStep(business),
     };
   }
 }

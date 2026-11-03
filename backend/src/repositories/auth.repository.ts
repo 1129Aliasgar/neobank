@@ -23,6 +23,13 @@ const BUSINESS_SUMMARY = {
   legalName: true,
   currency: true,
   status: true,
+  /* The completeness subset, so auth can derive an onboarding hint. */
+  businessType: true,
+  email: true,
+  state: true,
+  addressLine1: true,
+  city: true,
+  postalCode: true,
 } as const;
 
 @injectable()

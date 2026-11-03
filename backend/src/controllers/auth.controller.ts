@@ -5,18 +5,21 @@
  *   POST /api/v1/auth/register
  *   POST /api/v1/auth/login
  *   GET  /api/v1/auth/profile   (Bearer token or httpOnly cookie)
+ *   GET  /api/v1/auth/me        (alias for /profile)
  *   POST /api/v1/auth/logout
+ *
+ * The token cookie is written through `utils/authCookie`, so production gets
+ * the `__Host-` prefix that makes cookie tossing impossible.
  *
  * @author aliasgarbootwala3@gmail.com
  */
 
 import { controller, httpGet, httpPost } from "inversify-express-utils";
 import { inject } from "inversify";
-import type { CookieOptions, Request, Response } from "express";
+import type { Request, Response } from "express";
 import { TYPES } from "../config/types.js";
 import BaseController from "./base.controller.js";
 import { ALL_USER_ROLES, STATUS_CODE } from "../constants/constants.js";
-import { env } from "../config/env.js";
 import { loginSchema, registerSchema } from "../validators/user.validator.js";
 import { validateOrThrow } from "../validators/validate.js";
 import AuthService from "../services/auth.service.js";
@@ -25,33 +28,12 @@ import {
   loginLimiter,
   registerLimiter,
 } from "../middlewares/rateLimit.middleware.js";
+import {
+  clearAuthCookies,
+  extractToken,
+  setAuthCookie,
+} from "../utils/authCookie.js";
 import Logger from "../utils/logger.js";
-
-const TOKEN_COOKIE = "token";
-
-/**
- * Frontend (Vercel) and API (Render) are different sites in production, so a
- * `lax` cookie would simply not be sent on the dashboard's XHR calls. `none`
- * requires `secure`, which is safe because production is HTTPS.
- */
-function cookieOptions(): CookieOptions {
-  const isProduction = env.isProduction;
-
-  return {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
-    path: "/",
-  };
-}
-
-function extractToken(req: Request): string {
-  return (
-    req.cookies?.[TOKEN_COOKIE] ??
-    req.headers.authorization?.slice("Bearer ".length) ??
-    ""
-  );
-}
 
 @controller("/api/v1/auth")
 export default class AuthController extends BaseController {
@@ -68,7 +50,7 @@ export default class AuthController extends BaseController {
 
       const result = await this.authService.register(body);
 
-      res.cookie(TOKEN_COOKIE, result.token, cookieOptions());
+      setAuthCookie(res, result.token);
 
       return this.success(res, result, STATUS_CODE.CREATED);
     } catch (error) {
@@ -90,7 +72,7 @@ export default class AuthController extends BaseController {
 
       const result = await this.authService.login(body);
 
-      res.cookie(TOKEN_COOKIE, result.token, cookieOptions());
+      setAuthCookie(res, result.token);
 
       return this.success(res, result, STATUS_CODE.OK);
     } catch (error) {
@@ -100,17 +82,13 @@ export default class AuthController extends BaseController {
 
   @httpGet("/profile", authMiddleware(ALL_USER_ROLES))
   async profile(req: Request, res: Response) {
-    try {
-      const result = await this.authService.profile({
-        userId: req.user!.userId,
-        businessId: req.user!.businessId,
-        token: extractToken(req),
-      });
+    return this.currentSession(req, res);
+  }
 
-      return this.success(res, result, STATUS_CODE.OK);
-    } catch (error) {
-      return this.handleError(res, error);
-    }
+  /** HLD name for the same read; kept as an alias so both clients work. */
+  @httpGet("/me", authMiddleware(ALL_USER_ROLES))
+  async me(req: Request, res: Response) {
+    return this.currentSession(req, res);
   }
 
   @httpPost("/logout", authMiddleware(ALL_USER_ROLES))
@@ -121,13 +99,27 @@ export default class AuthController extends BaseController {
         userId: req.user!.userId,
       });
 
-      res.clearCookie(TOKEN_COOKIE, cookieOptions());
+      clearAuthCookies(res);
 
       return this.success(
         res,
         { message: "Logged out successfully" },
         STATUS_CODE.OK,
       );
+    } catch (error) {
+      return this.handleError(res, error);
+    }
+  }
+
+  private async currentSession(req: Request, res: Response) {
+    try {
+      const result = await this.authService.profile({
+        userId: req.user!.userId,
+        businessId: req.user!.businessId,
+        token: extractToken(req),
+      });
+
+      return this.success(res, result, STATUS_CODE.OK);
     } catch (error) {
       return this.handleError(res, error);
     }

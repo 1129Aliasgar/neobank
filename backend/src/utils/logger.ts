@@ -34,6 +34,19 @@ const REDACT_PATHS = [
   "token",
   "*.password",
   "*.token",
+  /* Provider material must never reach the log stream. */
+  "apiKey",
+  "*.apiKey",
+  "session_token",
+  "*.session_token",
+  "verificationUrl",
+  "*.verificationUrl",
+  "ssn",
+  "*.ssn",
+  "ein",
+  "*.ein",
+  "dob",
+  "*.dob",
 ];
 
 const baseOptions: LoggerOptions = {

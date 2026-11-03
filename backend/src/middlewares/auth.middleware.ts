@@ -22,6 +22,7 @@ import { TYPES } from "../config/types.js";
 import type AuthRepository from "../repositories/auth.repository.js";
 import { setRequestUserId } from "../utils/requestContext.js";
 import { verifyToken } from "../utils/token.js";
+import { extractToken } from "../utils/authCookie.js";
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -41,10 +42,12 @@ export const authMiddleware = (
     res: Response,
     next: NextFunction,
   ) => {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith("Bearer ")
-      ? authHeader.slice("Bearer ".length)
-      : req.cookies?.token;
+    /*
+     * The `__Host-` cookie (plain name in dev) or a Bearer token. The legacy
+     * `token` cookie is never read: accepting it would let a sibling subdomain
+     * plant a second value and reintroduce cookie tossing.
+     */
+    const token = extractToken(req);
 
     if (!token) {
       return res

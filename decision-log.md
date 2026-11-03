@@ -137,9 +137,75 @@ when a choice is made, not reconstructed at the end.
   (`20261103093000_init`) was generated and applied. From here schema changes go
   through `prisma migrate`, not `db push`, so deployments have history.
 
+## 2026-11-03T10:40Z — KYB provider: Didit Sandbox instead of Sumsub
+
+- Switched the KYB provider to **Didit**, in **Sandbox** mode. Sumsub's
+  self-service signup requires a corporate email domain, and we only have a
+  personal address, so the Sumsub account could not be created at all. Blocking
+  Module 1 on a vendor signup we cannot complete is worse than switching.
+- Didit was chosen over other alternatives because it matches the shape of the
+  flow we already designed: a backend-created session returns a hosted
+  verification URL, the provider posts `status.updated` webhooks, and a sandbox
+  application reproduces deterministic Approved/Declined/In Review outcomes. No
+  new domain concepts were needed.
+- **The provider seam is unchanged.** `Verification` still stores a provider
+  reference per attempt, and the integration lives behind a
+  `VerificationProvider` interface (`createSession`, `getDecision`,
+  `parseWebhook`). Swapping Didit for a real KYB provider later means adding an
+  implementation and one enum value, not rewriting the module.
+- **No SDK token endpoint.** Didit's hosted flow is a plain URL, so the Sumsub
+  "create applicant → mint short-lived SDK token → load WebSDK" sequence
+  collapses into "create session → open URL". The desktop path renders that URL
+  as a QR code so the user can finish on a phone. Fewer endpoints, no SDK script,
+  no token refresh callback.
+- **The EIN is dropped entirely.** Didit's KYB prefill takes `company_name`,
+  `registry_country` (`US-CA` for US state registries) and
+  `registration_number`; it never asks us for an EIN. The earlier plan collected
+  a full EIN in memory and persisted `einLast4`. That was a workaround for a
+  provider requirement that no longer exists, so the form does not ask for one
+  and `Business.taxId` is removed rather than repurposed. Less sensitive data
+  means less to leak, log or redact.
+- **`Business.status` and `Verification.status` stay separate**, and the split
+  is the module's core invariant:
+  - `Business.status` answers "may this business transact?" —
+    `PENDING_VERIFICATION`, `ACTIVE`, `REJECTED` (plus the ops-only `SUSPENDED`
+    and `CLOSED` already in the schema).
+  - `Verification.status` answers "what did the provider say about *this*
+    attempt?" — `NOT_STARTED`, `PENDING`, `APPROVED`, `REJECTED`, `REVIEW`.
+  A business can be `PENDING_VERIFICATION` while its verification is `REVIEW`,
+  and a rejected attempt never mutates the previous attempt's row. Collapsing
+  them into one column would make a retry erase the audit trail.
+- **Status vocabulary narrowed to five values.** `ON_HOLD` is renamed `REVIEW`,
+  and Didit's `Abandoned`/`Expired`/`Kyc Expired` collapse into `REJECTED` for
+  the attempt while the business stays `PENDING_VERIFICATION`, because those are
+  retryable non-decisions, not refusals. The raw provider string is kept in
+  `providerStatus` so the distinction is never lost.
+- **Sandbox is a first-class database fact.** `Verification.environment`
+  (`SANDBOX`/`LIVE`) and `sandboxScenario` are stored, returned by the API, and
+  rendered as a banner. A demo approval must never be mistakable for a real KYB
+  result, in the database or on screen.
+- **Webhook verification uses the body-covering signatures.** `X-Signature`
+  over the exact raw bytes first, then `X-Signature-V2` over canonical JSON
+  (sorted keys, compact separators, preserved Unicode). `X-Signature-Simple` is
+  deliberately not accepted: it authenticates only four envelope fields and
+  says nothing about `decision`. The `-Previous` headers are accepted for 24h so
+  a secret rotation does not take the endpoint down.
+- **Idempotency keys off `event_id`, not a hash.** Didit sends a stable UUID and
+  reuses it on retries, which is exactly the `@@unique([provider,
+  providerEventId])` constraint we wanted. The earlier semantic-hash fallback is
+  now only a defensive path for a malformed payload.
+- **Ordering is explicit.** Delivery order is not guaranteed, so
+  `providerCreatedAt` (from Didit's `created_at`) is stored and an older event
+  never overwrites newer state. When a decision matters, the decision endpoint
+  is re-fetched rather than trusted from the body.
+- Cost of the switch: one new vendor account, and the sandbox URLs/statuses are
+  now Didit's rather than Sumsub's. Everything downstream — onboarding state
+  machine, RBAC, `WebhookEvent`, `AuditLog`, the gate that keeps unverified
+  businesses out of money routes — is provider-independent and unchanged.
+
 ## Open assumptions
 
-- Sumsub sandbox and Stripe Issuing test mode both remain unverified on this
+- Didit sandbox and Stripe Issuing test mode both remain unverified on this
   account; if Issuing is unavailable, swap the `CardIssuingProvider`
   implementation to Lithic without touching the domain model.
 - Card/payment provider webhooks will be exercised from the deployed Render
