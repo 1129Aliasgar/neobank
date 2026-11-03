@@ -167,6 +167,23 @@ prisma/
 - Cookie is `httpOnly`; `secure` + `SameSite=None` in production because the
   frontend is on a different origin than the API.
 - `CORS_ORIGIN` is an allow-list; never commit a real `JWT_SECRET`.
+- `helmet` sets security headers; `x-powered-by` is disabled and
+  `Cross-Origin-Resource-Policy` is `cross-origin` for the Netlify frontend.
+- `compression` gzips JSON responses above ~1 KB.
+- `trust proxy` is set to one hop in production (Render terminates TLS), so
+  rate limiting and logs see the real client IP, not the proxy's.
+
+### Rate limits (in-memory, per client IP)
+
+| Bucket           | Scope                    | Limit                | Notes                          |
+| ---------------- | ------------------------ | -------------------- | ------------------------------ |
+| `apiLimiter`     | all `/api/v1` routes     | 300 / 15 min         | health checks exempt           |
+| `loginLimiter`   | `POST /auth/login`       | 10 failures / 15 min | successful logins do not count |
+| `registerLimiter`| `POST /auth/register`    | 10 / hour            | every attempt counts           |
+
+Exceeding a bucket returns `429` with `{ message, success: false }` and a
+`RateLimit` (draft-8) header. The store is in-memory: a single Render instance
+is covered; multiple instances need a shared Redis store.
 
 ## Next modules
 

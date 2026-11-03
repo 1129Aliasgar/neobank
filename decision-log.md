@@ -76,6 +76,40 @@ when a choice is made, not reconstructed at the end.
   `output: "export"`.
 - Site should be created with base directory `frontend` (monorepo layout).
 
+## 2026-11-03T09:02Z — Transport hardening
+
+- `helmet` with `Cross-Origin-Resource-Policy: cross-origin`: the API is a
+  different origin from the Netlify site, and a stricter policy would make the
+  browser refuse the JSON response. `x-powered-by` is disabled.
+- `compression()` for JSON above ~1 KB. Financial lists (ledger entries,
+  transactions) are the responses that will actually benefit.
+- Rate limits are split by intent instead of one global bucket: 300 requests /
+  15 min for the API, 10 *failed* logins / 15 min, 10 registrations / hour.
+  Successful logins do not consume the login budget, so a normal user cannot
+  lock themselves out by working.
+- Health checks are exempt from the API bucket, otherwise a 30-second uptime
+  probe would exhaust it and make the service look down to real traffic.
+- Store is in-memory deliberately: one Render instance is the deployment
+  target. If it scales horizontally, the store moves to Redis and nothing else
+  changes.
+
+## 2026-11-03T09:10Z — Frontend API client
+
+- One Axios instance (`frontend/lib/api.ts`) instead of `fetch` per component:
+  base URL, credentials, timeout, request id and error normalisation live in
+  one place.
+- `withCredentials` is on for the httpOnly cookie, but the Bearer token is also
+  kept in `localStorage`. Netlify and Render are different sites, and
+  third-party cookie blocking makes cookie-only auth unreliable in some
+  browsers. This is a trial trade-off, not the production design — production
+  would use a first-party API domain or a refresh-token rotation scheme.
+- Every request sends `x-request-id`; the backend already echoes it and logs it,
+  so a user-visible failure can be traced to its exact server log lines.
+- API errors are converted to `ApiClientError` (`status`, `isUnauthorized`) in
+  the response interceptor, so UI code never imports Axios types.
+- `authApi` owns token sync: login/register store the token, logout clears it
+  in a `finally` so the UI logs out even when the network call fails.
+
 ## Open assumptions
 
 - Sumsub sandbox and Stripe Issuing test mode both remain unverified on this

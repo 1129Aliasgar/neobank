@@ -9,6 +9,8 @@ import express from "express";
 import "reflect-metadata";
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import helmet from "helmet";
+import compression from "compression";
 import { randomUUID } from "node:crypto";
 import type {
   Application,
@@ -27,6 +29,7 @@ import {
   requestContextMiddleware,
   REQUEST_ID_HEADER,
 } from "./middlewares/requestContext.middleware.js";
+import { apiLimiter } from "./middlewares/rateLimit.middleware.js";
 import { rootLogger } from "./utils/logger.js";
 import { STATUS_CODE } from "./constants/constants.js";
 import { COMMON_ERRORS } from "./constants/error.js";
@@ -61,6 +64,17 @@ function corsOrigin(): boolean | string[] {
 }
 
 server.setConfig((app: Application) => {
+  /*
+   * Render terminates TLS in front of the service. Trusting exactly one proxy
+   * hop makes `req.ip` the real client address (rate limiting and logs) and
+   * refuses to honour a client-supplied X-Forwarded-For chain beyond it.
+   */
+  if (env.isProduction) {
+    app.set("trust proxy", 1);
+  }
+
+  app.disable("x-powered-by");
+
   /*
    * Structured HTTP logging first: it assigns `req.id`, so every following
    * layer — body parsers, auth, services — is correlated with one request id.
@@ -105,6 +119,19 @@ server.setConfig((app: Application) => {
 
   app.use(requestContextMiddleware);
 
+  /*
+   * Security headers. The API is cross-origin to the Netlify frontend, so the
+   * resource policy must allow that; the rest of helmet's defaults stand.
+   */
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+    }),
+  );
+
+  /* JSON responses compress on anything above ~1 KB. */
+  app.use(compression());
+
   app.use(express.json({ limit: "16kb" }));
   app.use(express.urlencoded({ extended: true, limit: "16kb" }));
   app.use(cookieParser());
@@ -115,6 +142,9 @@ server.setConfig((app: Application) => {
       credentials: true,
     }),
   );
+
+  /* Applied to every API route; health checks are exempt. */
+  app.use(apiLimiter);
 
   /* Registered before the inversify routes so it is reachable. */
   app.get("/api/v1/health", (_req: Request, res: Response) => {

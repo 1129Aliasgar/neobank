@@ -1,3 +1,40 @@
+# NeoBank frontend
+
+Next.js 16 + Tailwind + shadcn/ui dashboard. Deployed on Netlify (see
+`netlify.toml`; set the site's **Base directory** to `frontend`).
+
+## API client
+
+`lib/api.ts` is the shared Axios instance and `lib/auth.ts` wraps the auth
+routes:
+
+```ts
+import { authApi } from "@/lib/auth";
+import { ApiClientError } from "@/lib/api";
+
+try {
+  const { user } = await authApi.login({ email, password });
+  // user.role is OWNER | ADMIN | EMPLOYEE | OPERATIONS
+} catch (error) {
+  if (error instanceof ApiClientError) {
+    // error.message is the API's message, error.status the HTTP status
+  }
+}
+
+const me = await authApi.profile();
+await authApi.logout();
+```
+
+- `NEXT_PUBLIC_API_URL` points at the API (defaults to
+  `http://localhost:5000/api/v1`).
+- `withCredentials` is on for the httpOnly cookie; the Bearer token returned by
+  login/register is stored and attached as a fallback for cross-site deployments.
+- Every request sends `x-request-id`, the same id the backend logs.
+- Errors are normalised to `ApiClientError` (`status`, `isUnauthorized`), so
+  components never touch Axios internals.
+
+---
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started

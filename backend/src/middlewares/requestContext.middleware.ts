@@ -31,8 +31,9 @@ export const requestContextMiddleware = (
   );
 
   /*
-   * Express resolves req.ip from the socket. trust proxy is not enabled, so
-   * this is the real peer address rather than a client-supplied header.
+   * Express resolves req.ip from the socket. In production `trust proxy` is
+   * set to one hop in app.ts (Render terminates TLS), so this is the client
+   * address rather than the proxy's.
    */
   const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
 

@@ -21,6 +21,10 @@ import { loginSchema, registerSchema } from "../validators/user.validator.js";
 import { validateOrThrow } from "../validators/validate.js";
 import AuthService from "../services/auth.service.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
+import {
+  loginLimiter,
+  registerLimiter,
+} from "../middlewares/rateLimit.middleware.js";
 import Logger from "../utils/logger.js";
 
 const TOKEN_COOKIE = "token";
@@ -57,7 +61,7 @@ export default class AuthController extends BaseController {
   @inject(TYPES.Logger)
   logger!: Logger;
 
-  @httpPost("/register")
+  @httpPost("/register", registerLimiter)
   async register(req: Request, res: Response) {
     try {
       const body = validateOrThrow(registerSchema, req.body);
@@ -79,7 +83,7 @@ export default class AuthController extends BaseController {
     }
   }
 
-  @httpPost("/login")
+  @httpPost("/login", loginLimiter)
   async login(req: Request, res: Response) {
     try {
       const body = validateOrThrow(loginSchema, req.body);
