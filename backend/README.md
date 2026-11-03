@@ -13,7 +13,8 @@ modules are added next.
 | HTTP       | Express 4 + `inversify-express-utils`         |
 | Database   | PostgreSQL + Prisma 7 (`@prisma/adapter-pg`)  |
 | Auth       | JWT (Bearer) + httpOnly cookie, bcrypt hashes |
-| Validation | Joi at the boundary                           |
+| Logging    | Pino (JSON) + `pino-http`, request-correlated |
+| Validation | Joi at the boundary + boot-time env schema    |
 
 ## Roles
 
@@ -95,6 +96,37 @@ curl -s http://localhost:5000/api/v1/auth/profile \
 Status codes: `201` register, `200` read/OK, `400` validation, `401` missing or
 invalid/blacklisted token, `403` deleted account, `409` duplicate email/username.
 
+## Logging
+
+Pino emits one structured JSON object per line in production; locally (TTY) it
+pretty-prints. `pino-http` logs every completed request with status code and
+latency, and silently skips `/api/v1/health`.
+
+```json
+{"level":"info","time":"2026-11-03T08:18:01.986Z","service":"neobank-api","env":"production","requestId":"9633db21","ip":"203.0.113.7","userId":"cmw0...","msg":"user logged in"}
+```
+
+- `requestId` comes from `x-request-id` (or is generated) and is echoed back on
+  the response, so a user report can be matched to its log lines.
+- Every application log inside a request gets `requestId`, `ip` and `userId`
+  from `AsyncLocalStorage`; call sites never pass them.
+- `authorization` / `cookie` headers and `password` / `token` fields are
+  redacted at the logger, not at each call site.
+- `LOG_LEVEL` (`fatal|error|warn|info|debug|trace`) controls the floor.
+- Errors are logged with `{ err }` so Pino prints the stack once, structured.
+
+Why Pino over Winston: JSON-first by default, ~5x lower overhead per line, a
+request logger (`pino-http`) and redaction built in, and no transport plumbing
+for stdout on Render. Winston is fine if a team already standardises on it, but
+it is a heavier dependency for the same output here.
+
+## Environment validation
+
+`src/config/env.ts` validates `process.env` with Joi at import time. A missing
+`DATABASE_URL`, a short `JWT_SECRET`, or a bad `PORT` stops the process with a
+readable message before any route can serve traffic. Every module reads the
+typed `env`, never `process.env`.
+
 ## Scripts
 
 | Script                | What it does                              |
@@ -112,7 +144,7 @@ invalid/blacklisted token, `403` deleted account, `409` duplicate email/username
 
 ```
 src/
-├── config/        env, DI container, Prisma lifecycle
+├── config/        env + env validation, DI container, Prisma lifecycle
 ├── constants/     status codes, roles, error copy
 ├── controllers/   HTTP surface (auth only for now)
 ├── middlewares/   auth, request context

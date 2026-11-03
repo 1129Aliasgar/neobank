@@ -1,0 +1,19 @@
+# Netlify configuration for the Next.js frontend.
+#
+# In the Netlify UI set "Base directory" to `frontend` (this repo is a
+# backend/ + frontend/ monorepo). Netlify detects Next.js 16 and uses its
+# OpenNext adapter automatically, so no `publish` directory or redirects are
+# needed here — it manages `.next` itself.
+
+[build]
+  command = "npm run build"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    X-Frame-Options = "DENY"

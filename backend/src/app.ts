@@ -4,12 +4,12 @@
  * @author aliasgarbootwala3@gmail.com
  */
 
-import "./config/config.js";
+import "./config/env.js"; // dotenv + validation, must be first
 import express from "express";
 import "reflect-metadata";
-import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import { randomUUID } from "node:crypto";
 import type {
   Application,
   ErrorRequestHandler,
@@ -17,11 +17,17 @@ import type {
   Response,
 } from "express";
 import { InversifyExpressServer } from "inversify-express-utils";
+import { pinoHttp } from "pino-http";
 import container from "./config/container.js";
 import "./controllers/index.js";
 import { TYPES } from "./config/types.js";
+import { env } from "./config/env.js";
 import { IDatabase } from "./types/database.types.js";
-import { requestContextMiddleware } from "./middlewares/requestContext.middleware.js";
+import {
+  requestContextMiddleware,
+  REQUEST_ID_HEADER,
+} from "./middlewares/requestContext.middleware.js";
+import { rootLogger } from "./utils/logger.js";
 import { STATUS_CODE } from "./constants/constants.js";
 import { COMMON_ERRORS } from "./constants/error.js";
 
@@ -32,7 +38,7 @@ const db = container.get<IDatabase>(TYPES.Database);
 try {
   await db.connect();
 } catch (error) {
-  console.error("Failed to connect to the database:", error);
+  rootLogger.fatal({ err: error }, "database connection failed");
   process.exit(1);
 }
 
@@ -42,7 +48,7 @@ try {
  * the request origin is reflected instead.
  */
 function corsOrigin(): boolean | string[] {
-  const configured = (process.env.CORS_ORIGIN ?? "")
+  const configured = env.corsOrigin
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
@@ -56,14 +62,51 @@ function corsOrigin(): boolean | string[] {
 
 server.setConfig((app: Application) => {
   /*
-   * First, so every later log line — including the body parsers and
-   * morgan — carries the request id.
+   * Structured HTTP logging first: it assigns `req.id`, so every following
+   * layer — body parsers, auth, services — is correlated with one request id.
+   * Health checks are excluded to keep uptime probes out of the log stream.
    */
+  app.use(
+    pinoHttp({
+      logger: rootLogger,
+      quietReqLogger: true,
+      genReqId(req, res) {
+        const inbound = req.headers[REQUEST_ID_HEADER];
+
+        const id =
+          typeof inbound === "string" && inbound.length <= 64
+            ? inbound
+            : randomUUID().slice(0, 8);
+
+        res.setHeader(REQUEST_ID_HEADER, id);
+
+        return id;
+      },
+      autoLogging: {
+        ignore: (req) => req.url === "/api/v1/health",
+      },
+      customLogLevel(_req, res, err) {
+        if (err || res.statusCode >= 500) {
+          return "error";
+        }
+
+        return res.statusCode >= 400 ? "warn" : "info";
+      },
+      serializers: {
+        req(req) {
+          return { id: req.id, method: req.method, url: req.url };
+        },
+        res(res) {
+          return { statusCode: res.statusCode };
+        },
+      },
+    }),
+  );
+
   app.use(requestContextMiddleware);
 
   app.use(express.json({ limit: "16kb" }));
   app.use(express.urlencoded({ extended: true, limit: "16kb" }));
-  app.use(morgan("dev"));
   app.use(cookieParser());
 
   app.use(
@@ -100,6 +143,14 @@ server.setErrorConfig((app: Application) => {
       statusCode < 500
         ? (error?.message ?? COMMON_ERRORS.VALIDATION_FAILED)
         : COMMON_ERRORS.INTERNAL_SERVER_ERROR;
+
+    rootLogger.error(
+      {
+        err: error instanceof Error ? error : undefined,
+        statusCode,
+      },
+      "unhandled request error",
+    );
 
     res.status(statusCode).json({ message, success: false });
   };

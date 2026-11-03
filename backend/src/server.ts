@@ -6,16 +6,18 @@
 
 import http from "node:http";
 import app from "./app.js";
+import { env } from "./config/env.js";
 import container from "./config/container.js";
 import { TYPES } from "./config/types.js";
+import { rootLogger } from "./utils/logger.js";
 import type { IDatabase } from "./types/database.types.js";
 
 const server = http.createServer(app);
 
-const PORT = Number(process.env.PORT) || 5000;
+const PORT = env.port;
 
 server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  rootLogger.info({ port: PORT }, "server listening");
 });
 
 /**
@@ -23,11 +25,13 @@ server.listen(PORT, () => {
  * deploy/restart leaves connections open until the provider times them out.
  */
 async function shutdown(signal: string) {
-  console.log(`${signal} received, shutting down`);
+  rootLogger.info({ signal }, "shutting down");
 
   server.close(async () => {
     try {
       await container.get<IDatabase>(TYPES.Database).disconnect();
+    } catch (error) {
+      rootLogger.error({ err: error }, "error during shutdown");
     } finally {
       process.exit(0);
     }

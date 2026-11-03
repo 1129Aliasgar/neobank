@@ -16,6 +16,7 @@ import type { CookieOptions, Request, Response } from "express";
 import { TYPES } from "../config/types.js";
 import BaseController from "./base.controller.js";
 import { ALL_USER_ROLES, STATUS_CODE } from "../constants/constants.js";
+import { env } from "../config/env.js";
 import { loginSchema, registerSchema } from "../validators/user.validator.js";
 import { validateOrThrow } from "../validators/validate.js";
 import AuthService from "../services/auth.service.js";
@@ -30,7 +31,7 @@ const TOKEN_COOKIE = "token";
  * requires `secure`, which is safe because production is HTTPS.
  */
 function cookieOptions(): CookieOptions {
-  const isProduction = process.env.NODE_ENV === "production";
+  const isProduction = env.isProduction;
 
   return {
     httpOnly: true,

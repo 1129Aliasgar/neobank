@@ -2,6 +2,7 @@
  * @author aliasgarbootwala3@gmail.com
  */
 import jwt, { SignOptions } from "jsonwebtoken";
+import { env } from "../config/env.js";
 import { USER_ROLES } from "../constants/constants.js";
 import type { UserRole } from "../constants/constants.js";
 
@@ -16,27 +17,15 @@ export interface TokenPayload {
 type TokenClaims = Pick<TokenPayload, "userId" | "userRole" | "tokenVersion">;
 
 export const generateToken = (payload: TokenClaims): string => {
-  const secret = process.env.JWT_SECRET;
-
-  if (!secret) {
-    throw new Error("JWT_SECRET is not defined");
-  }
-
   const options: SignOptions = {
-    expiresIn: (process.env.JWT_EXPIRES_IN || "1d") as SignOptions["expiresIn"],
+    expiresIn: env.jwtExpiresIn as SignOptions["expiresIn"],
   };
 
-  return jwt.sign(payload, secret, options);
+  return jwt.sign(payload, env.jwtSecret, options);
 };
 
 export const verifyToken = (token: string): TokenPayload => {
-  const secret = process.env.JWT_SECRET;
-
-  if (!secret) {
-    throw new Error("JWT_SECRET is not defined");
-  }
-
-  const decoded: unknown = jwt.verify(token, secret);
+  const decoded: unknown = jwt.verify(token, env.jwtSecret);
 
   if (!decoded || typeof decoded !== "object") {
     throw new Error("Invalid token payload");

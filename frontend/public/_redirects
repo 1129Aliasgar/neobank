@@ -1,0 +1,14 @@
+# Netlify redirects for the NeoBank dashboard.
+#
+# This is a Next.js 16 App Router app. Netlify serves it through the OpenNext
+# runtime (zero config): SSR, route handlers, middleware and dynamic routes all
+# work without a catch-all rewrite.
+#
+# Do NOT enable the classic SPA fallback below for an SSR build. `/* /index.html
+# 200` shadows every Next.js route and serves index.html for pages the server
+# should render.
+#
+# Enable it ONLY if next.config.ts switches to `output: "export"` (static HTML)
+# and Netlify publishes the generated `out/` directory:
+#
+# /*    /index.html   200

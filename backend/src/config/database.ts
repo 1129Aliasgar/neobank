@@ -19,6 +19,7 @@ import {
   OMITTED_FIELDS,
 } from "../types/database.types.js";
 import { TYPES } from "./types.js";
+import { env } from "./env.js";
 import Logger from "../utils/logger.js";
 
 @injectable()
@@ -29,11 +30,7 @@ export default class PrismaDatabase implements IDatabase {
   private connected = false;
 
   constructor(@inject(TYPES.Logger) logger: Logger) {
-    const connectionString = process.env.DATABASE_URL;
-
-    if (!connectionString) {
-      throw new Error("DATABASE_URL is not defined");
-    }
+    const connectionString = env.databaseUrl;
 
     this.logger = logger;
 

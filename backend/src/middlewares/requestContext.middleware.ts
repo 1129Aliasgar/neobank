@@ -1,12 +1,11 @@
 /**
- * @author aliasgarbootwala3@gmail.com
- */
-
-/**
  * Opens a request context for the lifetime of one HTTP request.
  *
- * Must be registered before anything that logs, so the body parsers and
- * morgan are already covered.
+ * Must be registered after `pino-http` (which assigns `req.id`) and before
+ * anything that logs application events, so body parsers and business logs
+ * already carry the request id.
+ *
+ * @author aliasgarbootwala3@gmail.com
  */
 
 import { Request, Response, NextFunction } from "express";
@@ -23,25 +22,23 @@ export const requestContextMiddleware = (
   next: NextFunction,
 ) => {
   /*
-   * Reuse an inbound id so a request keeps its identity when it arrives
-   * through a gateway that already assigned one.
+   * `pino-http` has already resolved an id (inbound header or generated), so
+   * the HTTP log line and every application log share the same value. The
+   * fallback keeps the middleware usable on its own.
    */
-  const inbound = req.headers[REQUEST_ID_HEADER];
-
-  const requestId =
-    typeof inbound === "string" && inbound.length <= 64
-      ? inbound
-      : randomUUID().slice(0, 8);
+  const requestId = String(
+    req.id ?? req.headers[REQUEST_ID_HEADER] ?? randomUUID().slice(0, 8),
+  );
 
   /*
-   * Express resolves req.ip from the socket. trust proxy is not enabled,
-   * so this is the real peer address rather than a client-supplied header.
+   * Express resolves req.ip from the socket. trust proxy is not enabled, so
+   * this is the real peer address rather than a client-supplied header.
    */
   const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
 
   const userAgent = String(req.headers["user-agent"] ?? "unknown");
 
-  /* Echo it back so a client can quote it in a bug report. */
+  /* Echo it back so a client can quote it in a support request. */
   res.setHeader(REQUEST_ID_HEADER, requestId);
 
   runWithRequestContext(
