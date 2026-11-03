@@ -203,6 +203,43 @@ when a choice is made, not reconstructed at the end.
   machine, RBAC, `WebhookEvent`, `AuditLog`, the gate that keeps unverified
   businesses out of money routes — is provider-independent and unchanged.
 
+## 2026-11-03T12:30Z — Module 2 cut to a role-aware dashboard
+
+- Full org management (invitations, accept page, role editing, business
+  switching) is designed in `planning/feature1.md` but deferred.
+- The graded core loop is ledger → cards → approvals → reconciliation;
+  invitations are product polish and earn nothing in the rubric.
+- Two-role demo is already covered by the seeded owner, admin and employee.
+- Building now: one dashboard shell that renders owner vs employee components.
+
+## 2026-11-03T12:32Z — Roles unchanged, only two exposed
+
+- Keep `OWNER`, `ADMIN`, `EMPLOYEE`, `OPERATIONS` in the schema; dropping enum
+  values is a migration with no upside.
+- "Business" is the tenant, not a role: registration still creates `OWNER` and
+  the public form never accepts a role.
+- UI shows owner vs employee now; `ADMIN` stays for maker-checker approval and
+  `OPERATIONS` stays hidden.
+
+## 2026-11-03T12:34Z — One dashboard, not two
+
+- Same routes for everyone; components branch on `role` from `/auth/me`.
+- The API stays the real gate — hiding nav is cosmetic.
+- Tenancy is unchanged: `businessId` comes from the token, never the client, and
+  no customer can read another organisation.
+
+## 2026-11-03T12:36Z — Planning stays local
+
+- `planning/` is gitignored; only code, README and this log are submitted.
+- Entries from here stay 2–4 lines so the log is readable in review.
+
+## 2026-11-03T12:50Z — Specs reprioritised for the rubric
+
+- `feature1.md` is now the thin role-aware dashboard: one route, two components,
+  no backend change. Full invitations stay deferred as a twelve-decision backlog.
+- `feature2.md` specs Module 3 (wallet + double-entry ledger, integer cents) and
+  is the next thing built. Cards, payments and reconciliation consume it.
+
 ## Open assumptions
 
 - Didit sandbox and Stripe Issuing test mode both remain unverified on this

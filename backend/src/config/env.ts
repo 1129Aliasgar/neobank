@@ -85,6 +85,10 @@ const schema = Joi.object({
    * frontend is exposed as well as the API.
    */
   PUBLIC_WEB_URL: Joi.string().uri().allow("").default(""),
+  LEDGER_SANDBOX_TOOLS: Joi.boolean().truthy("true").falsy("false").default(true),
+  LEDGER_SANDBOX_TOOLS_ACK: Joi.string().allow("").default(""),
+  SANDBOX_FUNDING_DAILY_LIMIT_MINOR: Joi.string().pattern(/^\d+$/).default("20000000"),
+  SANDBOX_DEPOSIT_MAX_MINOR: Joi.string().pattern(/^\d+$/).default("5000000"),
 }).unknown(true); // a platform may inject extra vars (e.g. RENDER_*)
 
 const { error, value } = schema.validate(process.env, {
@@ -160,4 +164,14 @@ export const env = {
   frontendUrl: value.FRONTEND_URL as string,
   publicApiUrl: value.PUBLIC_API_URL as string,
   publicWebUrl: value.PUBLIC_WEB_URL as string,
+  ledger: {
+    sandboxTools: value.LEDGER_SANDBOX_TOOLS as boolean,
+    sandboxToolsAck: value.LEDGER_SANDBOX_TOOLS_ACK as string,
+    fundingDailyLimitMinor: BigInt(value.SANDBOX_FUNDING_DAILY_LIMIT_MINOR as string),
+    depositMaxMinor: BigInt(value.SANDBOX_DEPOSIT_MAX_MINOR as string),
+  },
 } as const;
+
+if (value.NODE_ENV === "production" && value.LEDGER_SANDBOX_TOOLS && value.LEDGER_SANDBOX_TOOLS_ACK !== "labelled") {
+  throw new Error("Invalid environment configuration:\n  - production requires LEDGER_SANDBOX_TOOLS_ACK=labelled when sandbox ledger tools are enabled");
+}

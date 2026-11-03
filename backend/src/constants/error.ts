@@ -55,6 +55,23 @@ export const VERIFICATION_ERRORS = {
   UNKNOWN_TRANSITION: "This verification update cannot be applied",
 } as const;
 
+export const LEDGER_ERRORS = {
+  BUSINESS_NOT_ACTIVE: "Business is not active",
+  EMPLOYEE_BALANCE_FORBIDDEN: "Employees cannot access the business wallet",
+  ACCOUNT_NOT_ACTIVE: "Account is not active",
+  IDEMPOTENCY_KEY_REQUIRED: "Idempotency-Key header is required",
+  IDEMPOTENCY_KEY_REUSED: "Idempotency key was reused with a different request",
+  AMOUNT_LIMIT_EXCEEDED: "Amount exceeds the per-call limit",
+  FUNDING_LIMIT_EXCEEDED: "Daily sandbox funding limit exceeded",
+  INSUFFICIENT_FUNDS: "Insufficient available funds",
+  HOLD_NOT_ACTIVE: "Hold is no longer active",
+  CAPTURE_EXCEEDS_HOLD: "Capture exceeds the hold amount",
+  TRANSACTION_NOT_FOUND: "Transaction not found",
+  REVERSAL_OF_REVERSAL: "A reversal cannot be reversed",
+  ALREADY_REVERSED: "Transaction has already been reversed",
+  SANDBOX_DISABLED: "Sandbox ledger tools are disabled",
+} as const;
+
 export const WEBHOOK_ERRORS = {
   INVALID_SIGNATURE: "Invalid webhook signature",
   STALE_TIMESTAMP: "Webhook timestamp is outside the accepted window",

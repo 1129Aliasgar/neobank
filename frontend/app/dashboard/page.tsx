@@ -1,59 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { ApiClientError, tokenStore } from "@/lib/api";
-import { authApi } from "@/lib/auth";
+import { OnboardingGate } from "@/components/app/onboarding-gate";
+import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { EmployeeHome } from "@/components/dashboard/employee-home";
+import { OwnerHome } from "@/components/dashboard/owner-home";
+import { Refusal } from "@/components/dashboard/refusal";
 
-/**
- * The end of Module 1, and deliberately nothing more.
- *
- * There is no chrome here by design: accounts, balances, cards and approvals
- * belong to later modules. The only job of this page is to prove the onboarding
- * pipeline produced an authenticated, approved business.
- */
 export default function DashboardPage() {
-  const router = useRouter();
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    if (!tokenStore.get()) {
-      router.replace("/login");
-      return;
-    }
-
-    let active = true;
-
-    void (async () => {
-      try {
-        await authApi.session();
-
-        if (active) {
-          setReady(true);
-        }
-      } catch (caught) {
-        if (caught instanceof ApiClientError && caught.isUnauthorized) {
-          tokenStore.clear();
-        }
-
-        router.replace("/login");
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, [router]);
-
-  if (!ready) {
-    return null;
-  }
-
   return (
-    <main className="flex min-h-svh items-center justify-center">
-      <h1 className="font-heading text-6xl font-light tracking-[-0.02em] text-ink">
-        Dashboard
-      </h1>
-    </main>
+    <OnboardingGate allow={["DONE"]}>
+      {(current) => {
+        if (current.role === "OPERATIONS") {
+          return <Refusal role={current.role} />;
+        }
+
+        return (
+          <DashboardShell current={current}>
+            {current.role === "EMPLOYEE" ? (
+              <EmployeeHome current={current} />
+            ) : (
+              <OwnerHome current={current} />
+            )}
+          </DashboardShell>
+        );
+      }}
+    </OnboardingGate>
   );
 }

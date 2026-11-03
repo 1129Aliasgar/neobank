@@ -13,6 +13,7 @@ import AuthService from "../services/auth.service.js";
 import BusinessService from "../services/business.service.js";
 import VerificationService from "../services/verification.service.js";
 import WebhookService from "../services/webhook.service.js";
+import LedgerService from "../services/ledger.service.js";
 
 // repositories
 import AuthRepository from "../repositories/auth.repository.js";
@@ -72,6 +73,7 @@ container
   .to(VerificationService)
   .inSingletonScope();
 container.bind(TYPES.WebhookService).to(WebhookService).inSingletonScope();
+container.bind(TYPES.LedgerService).to(LedgerService).inSingletonScope();
 
 // Repository bindings
 container.bind(TYPES.AuthRepository).to(AuthRepository).inSingletonScope();

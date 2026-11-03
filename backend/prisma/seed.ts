@@ -193,6 +193,133 @@ async function seedVerification(businessId: string): Promise<void> {
   });
 }
 
+async function seedLedger(businessId: string): Promise<void> {
+  const account = await prisma.account.upsert({
+    where: { businessId_currency: { businessId, currency: "USD" } },
+    create: { businessId, currency: "USD", environment: "SANDBOX" },
+    update: {},
+  });
+  const funds = await prisma.ledgerAccount.upsert({
+    where: { accountId_code: { accountId: account.id, code: "1010" } },
+    create: {
+      businessId,
+      accountId: account.id,
+      code: "1010",
+      name: "CUSTOMER_FUNDS",
+      type: "ASSET",
+      currency: "USD",
+    },
+    update: {},
+  });
+  const wallet = await prisma.ledgerAccount.upsert({
+    where: { accountId_code: { accountId: account.id, code: "2010" } },
+    create: {
+      businessId,
+      accountId: account.id,
+      code: "2010",
+      name: "WALLET",
+      type: "LIABILITY",
+      currency: "USD",
+    },
+    update: {},
+  });
+  const deposits = [
+    {
+      key: "seed:deposit:1",
+      kind: "DEPOSIT" as const,
+      amount: BigInt(2500000),
+      description: "Sandbox funding · Opening balance",
+      source: "SANDBOX_FUNDING",
+    },
+    {
+      key: "seed:capture:1",
+      kind: "CARD_CAPTURE" as const,
+      amount: BigInt(8420),
+      description: "Card capture · Northwind Supplies",
+      source: "SANDBOX_CAPTURE",
+    },
+    {
+      key: "seed:capture:2",
+      kind: "CARD_CAPTURE" as const,
+      amount: BigInt(1250),
+      description: "Card capture · Cloud hosting",
+      source: "SANDBOX_CAPTURE",
+    },
+  ];
+  for (const item of deposits) {
+    await prisma.$transaction(async (tx) => {
+      const row = await tx.ledgerTransaction.upsert({
+        where: {
+          businessId_idempotencyKey: { businessId, idempotencyKey: item.key },
+        },
+        create: {
+          businessId,
+          accountId: account.id,
+          kind: item.kind,
+          amountMinor: item.amount,
+          currency: "USD",
+          description: item.description,
+          idempotencyKey: item.key,
+          requestHash: item.key,
+          sourceType: item.source,
+          occurredAt: new Date(),
+          environment: "SANDBOX",
+        },
+        update: {},
+      });
+      await tx.ledgerEntry.upsert({
+        where: {
+          transactionId_ledgerAccountId_direction: {
+            transactionId: row.id,
+            ledgerAccountId: funds.id,
+            direction: item.kind === "DEPOSIT" ? "DEBIT" : "CREDIT",
+          },
+        },
+        create: {
+          transactionId: row.id,
+          ledgerAccountId: funds.id,
+          direction: item.kind === "DEPOSIT" ? "DEBIT" : "CREDIT",
+          amountMinor: item.amount,
+          currency: "USD",
+        },
+        update: {},
+      });
+      await tx.ledgerEntry.upsert({
+        where: {
+          transactionId_ledgerAccountId_direction: {
+            transactionId: row.id,
+            ledgerAccountId: wallet.id,
+            direction: item.kind === "DEPOSIT" ? "CREDIT" : "DEBIT",
+          },
+        },
+        create: {
+          transactionId: row.id,
+          ledgerAccountId: wallet.id,
+          direction: item.kind === "DEPOSIT" ? "CREDIT" : "DEBIT",
+          amountMinor: item.amount,
+          currency: "USD",
+        },
+        update: {},
+      });
+    });
+  }
+  await prisma.hold.upsert({
+    where: {
+      businessId_idempotencyKey: { businessId, idempotencyKey: "seed:hold:1" },
+    },
+    create: {
+      businessId,
+      accountId: account.id,
+      amountMinor: BigInt(12000),
+      currency: "USD",
+      source: "SANDBOX",
+      idempotencyKey: "seed:hold:1",
+      expiresAt: new Date(Date.now() + 7 * 86400000),
+    },
+    update: {},
+  });
+}
+
 async function main() {
   const password = await bcrypt.hash(DEMO_PASSWORD, 10);
 
@@ -242,6 +369,7 @@ async function main() {
 
     if (demo.complete) {
       await seedVerification(businessId);
+      await seedLedger(businessId);
     }
 
     console.log(`  business ${businessId} (${demo.status})\n`);

@@ -127,6 +127,52 @@ enum AuditActorType {
   AGENT
 }
 
+enum AccountStatus {
+  ACTIVE
+  FROZEN
+  CLOSED
+}
+enum LedgerEnvironment {
+  SANDBOX
+  LIVE
+}
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+enum LedgerDirection {
+  DEBIT
+  CREDIT
+}
+enum LedgerTransactionKind {
+  DEPOSIT
+  CARD_CAPTURE
+  CARD_REFUND
+  PAYMENT
+  PAYMENT_RETURN
+  FEE
+  REVERSAL
+  ADJUSTMENT
+}
+enum LedgerTransactionStatus {
+  POSTED
+  REVERSED
+}
+enum HoldStatus {
+  ACTIVE
+  CAPTURED
+  RELEASED
+  EXPIRED
+}
+enum HoldSource {
+  CARD_AUTHORIZATION
+  PAYMENT_REQUEST
+  SANDBOX
+}
+
 // ==========================================
 // 1. USER
 // ==========================================
@@ -228,8 +274,114 @@ model Business {
   verifications Verification[]
   webhookEvents WebhookEvent[]
   auditLogs     AuditLog[]
+  accounts Account[]
+  ledgerAccounts LedgerAccount[]
+  ledgerTransactions LedgerTransaction[]
+  holds Hold[]
 
   @@index([status, createdAt])
+}
+
+model Account {
+  id String @id @default(cuid())
+  businessId String
+  currency String @default("USD") @db.Char(3)
+  status AccountStatus @default(ACTIVE)
+  environment LedgerEnvironment @default(SANDBOX)
+  openedAt DateTime @default(now()) @db.Timestamptz(3)
+  frozenAt DateTime? @db.Timestamptz(3)
+  closedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  ledgerAccounts LedgerAccount[]
+  transactions LedgerTransaction[]
+  holds Hold[]
+  @@unique([businessId, currency])
+  @@index([status, openedAt])
+}
+
+model LedgerAccount {
+  id String @id @default(cuid())
+  businessId String
+  accountId String
+  code String
+  name String
+  type LedgerAccountType
+  currency String @db.Char(3)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  entries LedgerEntry[]
+  @@unique([accountId, code])
+  @@index([businessId, code])
+}
+
+model LedgerTransaction {
+  id String @id @default(cuid())
+  businessId String
+  accountId String
+  kind LedgerTransactionKind
+  status LedgerTransactionStatus @default(POSTED)
+  currency String @db.Char(3)
+  amountMinor BigInt
+  description String
+  idempotencyKey String
+  requestHash String
+  sourceType String
+  sourceId String?
+  occurredAt DateTime @db.Timestamptz(3)
+  postedAt DateTime @default(now()) @db.Timestamptz(3)
+  environment LedgerEnvironment @default(SANDBOX)
+  reversesTransactionId String? @unique
+  reverses LedgerTransaction? @relation("LedgerReversal", fields: [reversesTransactionId], references: [id], onDelete: Restrict)
+  reversedBy LedgerTransaction? @relation("LedgerReversal")
+  createdByUserId String?
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  entries LedgerEntry[]
+  @@unique([businessId, idempotencyKey])
+  @@index([accountId, postedAt, id])
+  @@index([businessId, kind, postedAt])
+  @@index([sourceType, sourceId])
+}
+
+model LedgerEntry {
+  id String @id @default(cuid())
+  transactionId String
+  ledgerAccountId String
+  direction LedgerDirection
+  amountMinor BigInt
+  currency String @db.Char(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  transaction LedgerTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  ledgerAccount LedgerAccount @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  @@unique([transactionId, ledgerAccountId, direction])
+  @@index([ledgerAccountId, createdAt])
+}
+
+model Hold {
+  id String @id @default(cuid())
+  businessId String
+  accountId String
+  amountMinor BigInt
+  capturedMinor BigInt @default(0)
+  currency String @db.Char(3)
+  status HoldStatus @default(ACTIVE)
+  source HoldSource
+  sourceId String?
+  idempotencyKey String
+  expiresAt DateTime @db.Timestamptz(3)
+  capturedAt DateTime?
+  releasedAt DateTime?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  @@unique([businessId, idempotencyKey])
+  @@unique([source, sourceId])
+  @@index([accountId, status, expiresAt])
 }
 
 // ==========================================
