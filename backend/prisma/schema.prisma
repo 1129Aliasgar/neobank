@@ -1,0 +1,92 @@
+/**
+ * NeoBank — core schema.
+ *
+ * The authentication slice only. Business, account, ledger, card, payment and
+ * reconciliation models are added module by module on top of `User`, which is
+ * why `User` deliberately carries no financial data of its own.
+ *
+ * @author aliasgarbootwala3@gmail.com
+ */
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  moduleFormat           = "esm"
+  generatedFileExtension = "ts"
+  importFileExtension    = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+/**
+ * Who the person is inside the business.
+ *
+ * These are business roles, not platform roles: a User is always a member of
+ * exactly one business in the MVP, so the role lives here until the
+ * BusinessMember model lands. `OPERATIONS` is the internal Corgi-style
+ * operator who can view webhooks, ledger history and reconciliation breaks
+ * but never move money.
+ */
+enum UserRole {
+  OWNER
+  ADMIN
+  EMPLOYEE
+  OPERATIONS
+}
+
+// ==========================================
+// 1. USER
+// ==========================================
+
+model User {
+  id       String   @id @default(cuid())
+  username String   @unique
+  email    String   @unique
+  password String
+  role     UserRole @default(EMPLOYEE)
+
+  /// Soft delete only. Financial history must never lose its actor.
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+
+  /// Bumped on logout-all / soft delete so previously issued JWTs stop working.
+  tokenVersion Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  blacklistedTokens BlacklistToken[]
+
+  @@index([isDeleted, createdAt])
+  @@index([role])
+}
+
+// ==========================================
+// 2. BLACKLIST TOKEN
+// ==========================================
+
+/**
+ * A logged-out JWT, stored until its own `exp` so the row can be swept later.
+ * Access tokens stay stateless; only logout needs this table.
+ */
+model BlacklistToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  expiresAt DateTime
+  userId    String
+
+  createdAt DateTime @default(now())
+
+  // Relationships
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
