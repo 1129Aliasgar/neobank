@@ -16,6 +16,7 @@
 # deployed site.
 
 [build]
+  base = "frontend"
   command = "npm run build"
   # The Next.js runtime turns this build into Netlify Functions + static
   # assets. Leaving it unset (or pointing at the source directory) publishes
