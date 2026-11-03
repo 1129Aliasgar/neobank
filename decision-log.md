@@ -240,11 +240,7 @@ when a choice is made, not reconstructed at the end.
 - `feature2.md` specs Module 3 (wallet + double-entry ledger, integer cents) and
   is the next thing built. Cards, payments and reconciliation consume it.
 
-## Open assumptions
+## 2026-11-03T19:30Z — Lithic Sandbox selected for Module 4
 
-- Didit sandbox and Stripe Issuing test mode both remain unverified on this
-  account; if Issuing is unavailable, swap the `CardIssuingProvider`
-  implementation to Lithic without touching the domain model.
-- Card/payment provider webhooks will be exercised from the deployed Render
-  URL, not localhost, so signature verification is tested against the real
-  delivery path.
+- Stripe Issuing is unavailable in the project region; Module 4 uses Lithic Sandbox for virtual cards and signed webhooks.
+- The provider boundary stays neutral, so the domain model and ledger flow remain unchanged; Lithic receives `/api/v1/webhooks/lithic`.
