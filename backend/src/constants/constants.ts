@@ -48,3 +48,37 @@ export const BUSINESS_ROLES: UserRole[] = [
 
 /** Roles allowed to approve another person's payment above the threshold. */
 export const APPROVER_ROLES: UserRole[] = [USER_ROLE.OWNER, USER_ROLE.ADMIN];
+
+/**
+ * Business lifecycle. Only `ACTIVE` may open accounts, issue cards or move
+ * money; `SUSPENDED` is a reversible compliance hold.
+ */
+export const BUSINESS_STATUS = {
+  PENDING_VERIFICATION: "PENDING_VERIFICATION",
+  ACTIVE: "ACTIVE",
+  SUSPENDED: "SUSPENDED",
+  CLOSED: "CLOSED",
+} as const;
+
+export type BusinessStatus =
+  (typeof BUSINESS_STATUS)[keyof typeof BUSINESS_STATUS];
+
+export const MEMBERSHIP_STATUS = {
+  INVITED: "INVITED",
+  ACTIVE: "ACTIVE",
+  REMOVED: "REMOVED",
+} as const;
+
+export type MembershipStatus =
+  (typeof MEMBERSHIP_STATUS)[keyof typeof MEMBERSHIP_STATUS];
+
+export const VERIFICATION_STATUS = {
+  NOT_STARTED: "NOT_STARTED",
+  PENDING: "PENDING",
+  APPROVED: "APPROVED",
+  REJECTED: "REJECTED",
+  ON_HOLD: "ON_HOLD",
+} as const;
+
+export type VerificationStatus =
+  (typeof VERIFICATION_STATUS)[keyof typeof VERIFICATION_STATUS];

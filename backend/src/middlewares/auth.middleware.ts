@@ -1,9 +1,20 @@
 /**
+ * Authentication and authorisation for every protected route.
+ *
+ * The token is only a claim. On each request the middleware re-reads the
+ * membership, so removing a member, changing their role, bumping
+ * `tokenVersion`, suspending the business or blacklisting the token all take
+ * effect immediately rather than when the JWT happens to expire.
+ *
  * @author aliasgarbootwala3@gmail.com
  */
 
 import type { NextFunction, Request, Response } from "express";
-import { ALL_USER_ROLES, STATUS_CODE } from "../constants/constants.js";
+import {
+  ALL_USER_ROLES,
+  BUSINESS_STATUS,
+  STATUS_CODE,
+} from "../constants/constants.js";
 import type { UserRole } from "../constants/constants.js";
 import { AUTH_ERRORS } from "../constants/error.js";
 import container from "../config/container.js";
@@ -15,6 +26,7 @@ import { verifyToken } from "../utils/token.js";
 type AuthenticatedRequest = Request & {
   user?: {
     userId: string;
+    businessId: string;
     role: UserRole;
   };
 };
@@ -54,18 +66,26 @@ export const authMiddleware = (
       const authRepository = container.get<AuthRepository>(
         TYPES.AuthRepository,
       );
-      const [user, blacklistedToken] = await Promise.all([
-        authRepository.findUserForAuthorization(decoded.userId),
+      const [session, blacklistedToken] = await Promise.all([
+        authRepository.findSessionForAuthorization(
+          decoded.userId,
+          decoded.businessId,
+        ),
         authRepository.isTokenBlacklisted(token),
       ]);
 
-      if (!user) {
+      /*
+       * No session means: no such membership, the membership was removed, or
+       * the user was soft-deleted. All are token-invalid, not "forbidden" —
+       * the client should sign in again.
+       */
+      if (!session) {
         return res
           .status(STATUS_CODE.UNAUTHORIZED)
           .json({ message: AUTH_ERRORS.INVALID_TOKEN });
       }
 
-      if (user.isDeleted) {
+      if (session.user.isDeleted) {
         return res
           .status(STATUS_CODE.FORBIDDEN)
           .json({ message: AUTH_ERRORS.ACCOUNT_DELETED });
@@ -73,22 +93,42 @@ export const authMiddleware = (
 
       if (
         blacklistedToken ||
-        user.tokenVersion !== decoded.tokenVersion ||
-        user.role !== decoded.userRole
+        session.user.tokenVersion !== decoded.tokenVersion ||
+        session.role !== decoded.userRole
       ) {
         return res
           .status(STATUS_CODE.UNAUTHORIZED)
           .json({ message: AUTH_ERRORS.INVALID_TOKEN });
       }
 
-      if (!allowedRoles.includes(user.role)) {
+      /*
+       * Suspended/closed businesses keep read access to nothing: compliance
+       * suspension freezes the whole workspace. PENDING_VERIFICATION is allowed
+       * so a new business can finish onboarding; money-moving routes add their
+       * own ACTIVE check.
+       */
+      if (
+        session.business.status === BUSINESS_STATUS.SUSPENDED ||
+        session.business.status === BUSINESS_STATUS.CLOSED
+      ) {
+        return res
+          .status(STATUS_CODE.FORBIDDEN)
+          .json({ message: AUTH_ERRORS.BUSINESS_UNAVAILABLE });
+      }
+
+      if (!allowedRoles.includes(session.role)) {
         return res
           .status(STATUS_CODE.FORBIDDEN)
           .json({ message: AUTH_ERRORS.FORBIDDEN });
       }
 
-      req.user = { userId: user.id, role: user.role };
-      setRequestUserId(user.id);
+      req.user = {
+        userId: session.user.id,
+        businessId: session.business.id,
+        role: session.role,
+      };
+      setRequestUserId(session.user.id);
+
       return next();
     } catch (error) {
       return next(error);

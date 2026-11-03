@@ -32,4 +32,6 @@ export const AUTH_ERRORS = {
   TOKEN_ALREADY_BLACKLISTED: "Token is already blacklisted",
   ACCOUNT_DELETED: "This account has been deleted",
   FORBIDDEN: "You are not allowed to access this resource",
+  NO_MEMBERSHIP: "This account has no active business membership",
+  BUSINESS_UNAVAILABLE: "This business account is not available",
 } as const;

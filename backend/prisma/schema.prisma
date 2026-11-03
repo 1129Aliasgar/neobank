@@ -1,9 +1,10 @@
 /**
  * NeoBank — core schema.
  *
- * The authentication slice only. Business, account, ledger, card, payment and
- * reconciliation models are added module by module on top of `User`, which is
- * why `User` deliberately carries no financial data of its own.
+ * Module order: identity (User) → business (Business / BusinessMember /
+ * Verification) → money (Account / LedgerTransaction / LedgerEntry) → cards →
+ * payments → reconciliation. Each module is added when its rules are designed,
+ * never as a placeholder.
  *
  * @author aliasgarbootwala3@gmail.com
  */
@@ -27,11 +28,10 @@ datasource db {
 /**
  * Who the person is inside the business.
  *
- * These are business roles, not platform roles: a User is always a member of
- * exactly one business in the MVP, so the role lives here until the
- * BusinessMember model lands. `OPERATIONS` is the internal Corgi-style
- * operator who can view webhooks, ledger history and reconciliation breaks
- * but never move money.
+ * The role lives on the membership, not on the user: the same person may be an
+ * ADMIN at one business and an EMPLOYEE at another. `OPERATIONS` is the
+ * internal Corgi-style operator who can view webhooks, ledger history and
+ * reconciliation breaks but never moves money.
  */
 enum UserRole {
   OWNER
@@ -40,16 +40,50 @@ enum UserRole {
   OPERATIONS
 }
 
+/** Lifecycle of a business account. Only ACTIVE may transact. */
+enum BusinessStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+/**
+ * Membership lifecycle. INVITED is a row created by an OWNER/ADMIN before the
+ * person accepts; REMOVED keeps the audit trail instead of deleting the row.
+ */
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  REMOVED
+}
+
+/**
+ * Sumsub-style applicant state. `NOT_STARTED` exists so a business can be
+ * created before the hosted flow is opened; nothing may transact until
+ * APPROVED.
+ */
+enum VerificationStatus {
+  NOT_STARTED
+  PENDING
+  APPROVED
+  REJECTED
+  ON_HOLD
+}
+
+enum VerificationProvider {
+  SUMSUB
+}
+
 // ==========================================
 // 1. USER
 // ==========================================
 
 model User {
-  id       String   @id @default(cuid())
-  username String   @unique
-  email    String   @unique
+  id       String @id @default(cuid())
+  username String @unique
+  email    String @unique
   password String
-  role     UserRole @default(EMPLOYEE)
 
   /// Soft delete only. Financial history must never lose its actor.
   isDeleted Boolean   @default(false)
@@ -63,9 +97,9 @@ model User {
 
   // Relationships
   blacklistedTokens BlacklistToken[]
+  memberships       BusinessMember[]
 
   @@index([isDeleted, createdAt])
-  @@index([role])
 }
 
 // ==========================================
@@ -89,4 +123,112 @@ model BlacklistToken {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+// ==========================================
+// 3. BUSINESS
+// ==========================================
+
+/**
+ * The customer entity that owns the account, cards and money.
+ *
+ * One business per registration in the MVP; the schema already allows a user
+ * to belong to several through `BusinessMember`, so a future "switch company"
+ * feature does not need a data migration.
+ */
+model Business {
+  id          String  @id @default(cuid())
+  legalName   String
+  tradingName String?
+
+  /// ISO 3166-1 alpha-2. Compliance/KYC is country-dependent.
+  country String @default("US") @db.Char(2)
+
+  /// ISO 4217. The MVP opens USD accounts only; the column keeps it explicit.
+  currency String @default("USD") @db.Char(3)
+
+  /// Company registration / tax identifier supplied during onboarding.
+  registrationNumber String?
+  taxId              String?
+
+  status BusinessStatus @default(PENDING_VERIFICATION)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  members       BusinessMember[]
+  verifications Verification[]
+
+  @@index([status, createdAt])
+}
+
+// ==========================================
+// 4. BUSINESS MEMBER
+// ==========================================
+
+/**
+ * The join between a person and a business, and the only place a role is held.
+ *
+ * `@@unique([businessId, userId])` means one membership per person per
+ * business; removing someone sets `status = REMOVED` so their historical
+ * approvals still resolve to a real user.
+ */
+model BusinessMember {
+  id         String @id @default(cuid())
+  businessId String
+  userId     String
+
+  role   UserRole
+  status MembershipStatus @default(INVITED)
+
+  joinedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([businessId, userId])
+  @@index([userId, status])
+  @@index([businessId, status])
+}
+
+// ==========================================
+// 5. VERIFICATION
+// ==========================================
+
+/**
+ * A KYC/KYB attempt.
+ *
+ * Kept as its own row rather than fields on `Business` because a rejected
+ * applicant re-submits, and the previous decision must remain auditable.
+ * `providerApplicantId` is the idempotency key for webhook callbacks.
+ */
+model Verification {
+  id         String @id @default(cuid())
+  businessId String
+
+  provider          VerificationProvider
+  providerApplicantId String? @unique
+  levelName           String?
+
+  status          VerificationStatus @default(NOT_STARTED)
+  rejectionReason String?
+
+  /// Provider payload subset for support/debugging. Never store documents here.
+  providerData Json?
+
+  reviewedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, createdAt])
+  @@index([status])
 }

@@ -103,6 +103,7 @@ export default class AuthController extends BaseController {
     try {
       const result = await this.authService.profile({
         userId: req.user!.userId,
+        businessId: req.user!.businessId,
         token: extractToken(req),
       });
 

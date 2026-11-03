@@ -1,9 +1,13 @@
 /**
  * Demo seed.
  *
- * Idempotent: running it twice leaves the same four accounts, with passwords
- * reset to the documented demo value. Never point this at a database that holds
- * anything you care about.
+ * Idempotent: running it twice leaves the same demo business and four members,
+ * with passwords reset to the documented demo value. Never point this at a
+ * database that holds anything you care about.
+ *
+ * Roles live on `BusinessMember`, so the demo business is created first and
+ * each user is attached to it. The owner row is what a real registration
+ * produces.
  *
  * Usage: npm run db:seed
  *
@@ -14,7 +18,12 @@ import "dotenv/config";
 import bcrypt from "bcrypt";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client.js";
-import { USER_ROLE, type UserRole } from "../src/constants/constants.js";
+import {
+  BUSINESS_STATUS,
+  MEMBERSHIP_STATUS,
+  USER_ROLE,
+  type UserRole,
+} from "../src/constants/constants.js";
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -27,6 +36,7 @@ const prisma = new PrismaClient({
 });
 
 const DEMO_PASSWORD = "NeoBank@123";
+const DEMO_BUSINESS = "NeoBank Demo Co";
 
 const demoUsers: Array<{
   username: string;
@@ -46,28 +56,60 @@ const demoUsers: Array<{
 async function main() {
   const password = await bcrypt.hash(DEMO_PASSWORD, 10);
 
+  const business =
+    (await prisma.business.findFirst({
+      where: { legalName: DEMO_BUSINESS },
+    })) ??
+    (await prisma.business.create({
+      data: {
+        legalName: DEMO_BUSINESS,
+        country: "US",
+        currency: "USD",
+        status: BUSINESS_STATUS.ACTIVE,
+      },
+    }));
+
   for (const demo of demoUsers) {
-    await prisma.user.upsert({
+    const user = await prisma.user.upsert({
       where: { email: demo.email },
       create: {
         username: demo.username,
         email: demo.email,
         password,
-        role: demo.role,
       },
       update: {
         username: demo.username,
         password,
-        role: demo.role,
         isDeleted: false,
         deletedAt: null,
+      },
+    });
+
+    await prisma.businessMember.upsert({
+      where: {
+        businessId_userId: {
+          businessId: business.id,
+          userId: user.id,
+        },
+      },
+      create: {
+        businessId: business.id,
+        userId: user.id,
+        role: demo.role,
+        status: MEMBERSHIP_STATUS.ACTIVE,
+        joinedAt: new Date(),
+      },
+      update: {
+        role: demo.role,
+        status: MEMBERSHIP_STATUS.ACTIVE,
       },
     });
 
     console.log(`seeded ${demo.role.padEnd(10)} ${demo.email}`);
   }
 
-  console.log(`\nDemo password for all accounts: ${DEMO_PASSWORD}`);
+  console.log(`\nBusiness: ${business.legalName} (${business.id})`);
+  console.log(`Demo password for all accounts: ${DEMO_PASSWORD}`);
 }
 
 main()

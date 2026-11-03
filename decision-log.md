@@ -110,6 +110,33 @@ when a choice is made, not reconstructed at the end.
 - `authApi` owns token sync: login/register store the token, logout clears it
   in a `finally` so the UI logs out even when the network call fails.
 
+## 2026-11-03T09:20Z — Business domain and role ownership
+
+- Added `Business`, `BusinessMember` and `Verification`, and **moved the role off
+  `User` onto `BusinessMember`**. A user is not "an ADMIN" in the abstract; they
+  are an ADMIN of a specific business. Keeping the role on `User` would have
+  forced a migration later, when real memberships exist.
+- Registration is now one transaction: `User` + `Business` + `OWNER` membership.
+  A user without a business, or a business without an owner, is not a state the
+  API can produce.
+- The JWT carries `businessId` in addition to `userId`/`role`, and
+  `authMiddleware` re-reads the membership on every request. Removed members and
+  role changes therefore take effect immediately; the token is not trusted on
+  its own.
+- New businesses start `PENDING_VERIFICATION` but **can still sign in**, so the
+  onboarding/KYC screens are reachable. `SUSPENDED`/`CLOSED` are rejected at
+  auth; money-moving routes will add an explicit `ACTIVE` check rather than
+  hiding the whole workspace.
+- The demo seed creates one ACTIVE business (`NeoBank Demo Co`) with all four
+  roles, so maker-checker and OPERATIONS views can be exercised immediately.
+- `Verification` is a row per attempt, not fields on `Business`: a rejected
+  applicant re-submits, and the earlier decision has to stay auditable.
+  `providerApplicantId` is unique because it is the Sumsub webhook idempotency
+  key.
+- The local database was reset (user-approved) and the first migration
+  (`20261103093000_init`) was generated and applied. From here schema changes go
+  through `prisma migrate`, not `db push`, so deployments have history.
+
 ## Open assumptions
 
 - Sumsub sandbox and Stripe Issuing test mode both remain unverified on this

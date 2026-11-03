@@ -8,13 +8,17 @@ import type { UserRole } from "../constants/constants.js";
 
 export interface TokenPayload {
   userId: string;
+  businessId: string;
   userRole: UserRole;
   tokenVersion: number;
   iat: number;
   exp: number;
 }
 
-type TokenClaims = Pick<TokenPayload, "userId" | "userRole" | "tokenVersion">;
+type TokenClaims = Pick<
+  TokenPayload,
+  "userId" | "businessId" | "userRole" | "tokenVersion"
+>;
 
 export const generateToken = (payload: TokenClaims): string => {
   const options: SignOptions = {
@@ -39,6 +43,7 @@ export const verifyToken = (token: string): TokenPayload => {
 
   if (
     typeof payload.userId !== "string" ||
+    typeof payload.businessId !== "string" ||
     !isUserRole(payload.userRole) ||
     typeof tokenVersion !== "number" ||
     !Number.isInteger(tokenVersion) ||
@@ -52,6 +57,7 @@ export const verifyToken = (token: string): TokenPayload => {
 
   return {
     userId: payload.userId,
+    businessId: payload.businessId,
     userRole: payload.userRole,
     tokenVersion,
     iat: payload.iat,

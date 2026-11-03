@@ -1,9 +1,10 @@
 /**
  * Authentication for the Neobank MVP.
  *
- * Scope: register (creates the business OWNER), login, profile and logout.
- * Business, account, ledger, card, payment and approval services are separate
- * modules and must never be folded back in here.
+ * Scope: register (creates the user, the business and its OWNER membership in
+ * one transaction), login, profile and logout. Business, account, ledger, card,
+ * payment and approval services are separate modules and must never be folded
+ * back in here.
  *
  * @author aliasgarbootwala3@gmail.com
  */
@@ -17,12 +18,17 @@ import {
   LogoutUserInput,
   ProfileUserInput,
   RegisterUserInput,
-  User,
   UserProfile,
 } from "../types/user.types.js";
+import type { BusinessSummary } from "../types/business.types.js";
 import Logger from "../utils/logger.js";
 import AuthRepository from "../repositories/auth.repository.js";
-import { STATUS_CODE, USER_ROLE } from "../constants/constants.js";
+import {
+  BUSINESS_STATUS,
+  STATUS_CODE,
+  type BusinessStatus,
+  type UserRole,
+} from "../constants/constants.js";
 import { AUTH_ERRORS, USER_ERRORS } from "../constants/error.js";
 import ApiError from "../utils/apiError.js";
 
@@ -47,9 +53,9 @@ export default class AuthService {
   /**
    * Public sign-up.
    *
-   * The account is always created as OWNER: the person registering is the one
-   * opening the business account. Roles are never taken from the request body,
-   * otherwise anyone could register themselves as OPERATIONS.
+   * The account is always created as the business OWNER: the person registering
+   * is the one opening the business account. Roles are never taken from the
+   * request body, otherwise anyone could register themselves as OPERATIONS.
    */
   async register(userData: RegisterUserInput) {
     this.logger.info("registering user", { email: userData.email });
@@ -80,14 +86,20 @@ export default class AuthService {
 
     const hashedPassword = await bcrypt.hash(userData.password, 10);
 
-    let user: User;
+    let account: Awaited<ReturnType<AuthRepository["createOwnerAccount"]>>;
 
     try {
-      user = await this.authRepository.createUser({
-        username: userData.username,
-        email: userData.email,
-        password: hashedPassword,
-        role: USER_ROLE.OWNER,
+      account = await this.authRepository.createOwnerAccount({
+        user: {
+          username: userData.username,
+          email: userData.email,
+          password: hashedPassword,
+        },
+        business: {
+          legalName:
+            userData.businessName?.trim() || `${userData.username}'s Business`,
+          country: userData.country ?? "US",
+        },
       });
     } catch (error) {
       /*
@@ -105,15 +117,24 @@ export default class AuthService {
       throw error;
     }
 
-    this.logger.info("user registered", { userId: user.id });
+    const { user, business, membership } = account;
+
+    this.logger.info("user registered", {
+      userId: user.id,
+      businessId: business.id,
+    });
 
     const token = generateToken({
       userId: user.id,
-      userRole: user.role,
+      businessId: business.id,
+      userRole: membership.role,
       tokenVersion: user.tokenVersion,
     });
 
-    return { user: this.toProfile(user), token };
+    return {
+      user: this.toProfile(user, business, membership.role),
+      token,
+    };
   }
 
   async login(userData: LoginUserInput) {
@@ -155,15 +176,49 @@ export default class AuthService {
       );
     }
 
+    /* A user with no business has no role and nothing to sign in to. */
+    const membership = user.memberships[0];
+
+    if (!membership) {
+      this.logger.warn("login rejected: no active business membership", {
+        userId: user.id,
+      });
+
+      throw new ApiError(AUTH_ERRORS.NO_MEMBERSHIP, STATUS_CODE.FORBIDDEN);
+    }
+
+    if (
+      membership.business.status === BUSINESS_STATUS.SUSPENDED ||
+      membership.business.status === BUSINESS_STATUS.CLOSED
+    ) {
+      this.logger.warn("login rejected: business is not accessible", {
+        userId: user.id,
+        businessId: membership.businessId,
+        status: membership.business.status,
+      });
+
+      throw new ApiError(
+        AUTH_ERRORS.BUSINESS_UNAVAILABLE,
+        STATUS_CODE.FORBIDDEN,
+      );
+    }
+
     const token = generateToken({
       userId: user.id,
-      userRole: user.role,
+      businessId: membership.businessId,
+      userRole: membership.role,
       tokenVersion: user.tokenVersion,
     });
 
-    this.logger.info("user logged in", { userId: user.id });
+    this.logger.info("user logged in", {
+      userId: user.id,
+      businessId: membership.businessId,
+    });
 
-    return { user: this.toProfile(user), token };
+    return {
+      user: this.toProfile(user, membership.business, membership.role),
+      token,
+    };
   }
 
   async profile(userData: ProfileUserInput) {
@@ -181,17 +236,27 @@ export default class AuthService {
       throw new ApiError(AUTH_ERRORS.TOKEN_INVALID, STATUS_CODE.UNAUTHORIZED);
     }
 
-    const user = await this.authRepository.findUserById(userData.userId);
+    const membership = await this.authRepository.findProfile(
+      userData.userId,
+      userData.businessId,
+    );
 
-    if (!user) {
-      this.logger.warn("profile rejected: user no longer exists", {
+    if (!membership) {
+      this.logger.warn("profile rejected: no active membership", {
         userId: userData.userId,
+        businessId: userData.businessId,
       });
 
-      throw new ApiError(USER_ERRORS.NOT_FOUND, STATUS_CODE.NOT_FOUND);
+      throw new ApiError(AUTH_ERRORS.TOKEN_INVALID, STATUS_CODE.UNAUTHORIZED);
     }
 
-    return { user: this.toProfile(user) };
+    return {
+      user: this.toProfile(
+        membership.user,
+        membership.business,
+        membership.role,
+      ),
+    };
   }
 
   /**
@@ -226,20 +291,36 @@ export default class AuthService {
     return result;
   }
 
-  /** The signed-in user's shape, shared by register, login and profile. */
-  private toProfile(user: {
-    id: string;
-    username: string;
-    email: string;
-    role: UserProfile["role"];
-    createdAt: Date;
-    updatedAt: Date;
-  }): UserProfile {
+  /** The signed-in shape, shared by register, login and profile. */
+  private toProfile(
+    user: {
+      id: string;
+      username: string;
+      email: string;
+      createdAt: Date;
+      updatedAt: Date;
+    },
+    business: {
+      id: string;
+      legalName: string;
+      currency: string;
+      status: BusinessStatus;
+    },
+    role: UserRole,
+  ): UserProfile {
+    const summary: BusinessSummary = {
+      id: business.id,
+      legalName: business.legalName,
+      currency: business.currency,
+      status: business.status,
+    };
+
     return {
       id: user.id,
       username: user.username,
       email: user.email,
-      role: user.role,
+      role,
+      business: summary,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };

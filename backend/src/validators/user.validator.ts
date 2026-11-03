@@ -34,11 +34,22 @@ const password = Joi.string().min(8).max(PASSWORD_MAX);
  *
  * `role` is intentionally not accepted: public sign-up always creates the
  * business OWNER. Team members are invited/assigned later by an OWNER or ADMIN.
+ *
+ * `businessName` and `country` are onboarding metadata, not privilege switches.
+ * The name falls back to the username and the country to US when omitted, so
+ * the existing three-field form keeps working.
  */
 export const registerSchema = Joi.object({
   username: username.required(),
   email: email.required(),
   password: password.required(),
+  businessName: Joi.string().trim().min(2).max(100).optional(),
+  country: Joi.string()
+    .trim()
+    .uppercase()
+    .length(2)
+    .pattern(/^[A-Z]{2}$/)
+    .optional(),
 });
 
 /**

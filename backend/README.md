@@ -1,9 +1,12 @@
 # NeoBank — Backend
 
-Express + TypeScript API for the Corgi Neobank work trial (Track 3). This is the
-**auth foundation** of a larger build: register, login, profile and logout on top
-of PostgreSQL + Prisma. Business, ledger, card, payment and reconciliation
-modules are added next.
+Express + TypeScript API for the Corgi Neobank work trial (Track 3). Built so far:
+
+- **Identity & auth** — register, login, profile, logout
+- **Business domain** — `Business`, `BusinessMember` (roles), `Verification`
+
+The ledger, card, payment and reconciliation modules are added next, on top of
+these models.
 
 ## Stack
 
@@ -16,9 +19,24 @@ modules are added next.
 | Logging    | Pino (JSON) + `pino-http`, request-correlated |
 | Validation | Joi at the boundary + boot-time env schema    |
 
+## Data model
+
+| Model            | Purpose                                                              |
+| ---------------- | -------------------------------------------------------------------- |
+| `User`           | Person + credentials. No role, no financial data.                    |
+| `Business`       | The customer entity that will own accounts, cards and money.         |
+| `BusinessMember` | `(business, user)` join **and the only place a role lives**.         |
+| `Verification`   | KYC/KYB attempt (Sumsub applicant, status, provider payload subset). |
+| `BlacklistToken` | Logged-out JWTs kept until their own `exp`.                           |
+
+Registration writes the user, the business and the `OWNER` membership in one
+transaction: an account without a business, or a business without an owner, is
+not a valid state.
+
 ## Roles
 
-Business roles live on `User.role` until the `BusinessMember` model lands:
+Roles live on `BusinessMember`, so the same person can be an ADMIN at one
+business and an EMPLOYEE at another:
 
 | Role         | Meaning                                                               |
 | ------------ | --------------------------------------------------------------------- |
@@ -27,18 +45,22 @@ Business roles live on `User.role` until the `BusinessMember` model lands:
 | `EMPLOYEE`   | Uses an assigned card, initiates payment requests                     |
 | `OPERATIONS` | Platform operator: reads webhooks/ledger/breaks; never moves money    |
 
-Public registration always creates an `OWNER`. A client can never self-assign a
-role; team members are assigned by an `OWNER`/`ADMIN`. The initiator/approver
-split is a permission check, not a separate role: an approver can never approve
-their own request.
+Public registration always creates an `OWNER` **membership**. A client can never
+self-assign a role; team members are assigned by an `OWNER`/`ADMIN`. The
+initiator/approver split is a permission check, not a separate role: an approver
+can never approve their own request.
+
+The JWT carries `userId`, `businessId`, `userRole` and `tokenVersion`. Every
+protected request re-reads the membership, so a removed member or changed role
+takes effect immediately rather than at token expiry.
 
 ## Quick start
 
 ```bash
 cp .env.example .env      # fill DATABASE_URL + a long JWT_SECRET
 npm install
-npm run db:push           # sync the schema (use db:migrate for real migrations)
-npm run db:seed           # optional: demo users
+npm run db:migrate        # apply prisma/migrations
+npm run db:seed           # optional: demo business + users
 npm run dev               # http://localhost:5000
 ```
 
@@ -59,6 +81,8 @@ your setup requires it.
 
 ### Demo users (`npm run db:seed`)
 
+All four belong to **NeoBank Demo Co** (USD, ACTIVE).
+
 | Email                 | Role         | Password      |
 | --------------------- | ------------ | ------------- |
 | `owner@neobank.dev`   | `OWNER`      | `NeoBank@123` |
@@ -74,13 +98,36 @@ Base path: `/api/v1`. Every response is `{ data, success }` on success and
 | Method | Path              | Auth | Body / notes                                    |
 | ------ | ----------------- | ---- | ----------------------------------------------- |
 | GET    | `/health`         | —    | `{ status: "ok" }`                              |
-| POST   | `/auth/register`  | —    | `{ username, email, password }` → creates OWNER |
+| POST   | `/auth/register`  | —    | `{ username, email, password, businessName?, country? }` → creates business + OWNER membership |
 | POST   | `/auth/login`     | —    | `{ email, password }` → `{ user, token }`       |
-| GET    | `/auth/profile`   | Yes  | current user                                    |
+| GET    | `/auth/profile`   | Yes  | current user, role and business                 |
 | POST   | `/auth/logout`    | Yes  | blacklists the presented JWT and clears cookie  |
 
 Auth accepts either `Authorization: Bearer <token>` or the `token` httpOnly
 cookie set by register/login. Logout requires a valid token.
+
+`user` in auth responses:
+
+```json
+{
+  "id": "cmw0...",
+  "username": "owner",
+  "email": "owner@neobank.dev",
+  "role": "OWNER",
+  "business": {
+    "id": "cmw0...",
+    "legalName": "NeoBank Demo Co",
+    "currency": "USD",
+    "status": "ACTIVE"
+  },
+  "createdAt": "...",
+  "updatedAt": "..."
+}
+```
+
+New registrations start with `business.status = PENDING_VERIFICATION`; the
+business can sign in and finish onboarding, but money-moving routes will require
+`ACTIVE`.
 
 ### Example
 
@@ -94,7 +141,8 @@ curl -s http://localhost:5000/api/v1/auth/profile \
 ```
 
 Status codes: `201` register, `200` read/OK, `400` validation, `401` missing or
-invalid/blacklisted token, `403` deleted account, `409` duplicate email/username.
+invalid/blacklisted token, `403` deleted account / no membership / suspended
+business, `409` duplicate email/username.
 
 ## Logging
 
@@ -154,8 +202,9 @@ src/
 ├── utils/         JWT, logger, ApiError, request context
 └── validators/    Joi schemas
 prisma/
-├── schema.prisma  User + BlacklistToken
-└── seed.ts        demo users
+├── schema.prisma  User, Business, BusinessMember, Verification, BlacklistToken
+├── migrations/    versioned SQL (apply with `npm run db:migrate`)
+└── seed.ts        demo business + users
 ```
 
 ## Security notes
@@ -163,6 +212,9 @@ prisma/
 - Passwords are hashed with bcrypt (10 rounds) and never returned by queries.
 - `password` is omitted client-wide; only the login read opts back in.
 - Tokens carry `tokenVersion`, so soft delete / logout-all invalidates old JWTs.
+- The JWT is scoped to one business (`businessId`) and the membership is
+  re-checked on every request: removing a member, changing their role or
+  suspending the business revokes access immediately.
 - Logout blacklists the exact token until its `exp`.
 - Cookie is `httpOnly`; `secure` + `SameSite=None` in production because the
   frontend is on a different origin than the API.
@@ -187,10 +239,9 @@ is covered; multiple instances need a shared Redis store.
 
 ## Next modules
 
-1. `Business` + `BusinessMember` (move roles to membership, invite flow)
-2. `Account` + append-only double-entry `LedgerTransaction` / `LedgerEntry`
-3. Holds derived **available** balance (never a stored number)
-4. Cards + authorization → partial capture → reversal state machine
-5. Payment requests + maker-checker approvals + threshold
-6. Webhook events (unique provider id, idempotent) + reconciliation breaks
-7. MCP read tools + one approval-queue write tool
+1. `Account` + append-only double-entry `LedgerTransaction` / `LedgerEntry`
+2. Holds derived **available** balance (never a stored number)
+3. Cards + authorization → partial capture → reversal state machine
+4. Payment requests + maker-checker approvals + threshold
+5. Webhook events (unique provider id, idempotent) + reconciliation breaks
+6. MCP read tools + one approval-queue write tool

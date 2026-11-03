@@ -10,11 +10,25 @@ import { api, tokenStore, type ApiSuccess } from "./api";
 
 export type UserRole = "OWNER" | "ADMIN" | "EMPLOYEE" | "OPERATIONS";
 
+export type BusinessStatus =
+  | "PENDING_VERIFICATION"
+  | "ACTIVE"
+  | "SUSPENDED"
+  | "CLOSED";
+
+export interface BusinessSummary {
+  id: string;
+  legalName: string;
+  currency: string;
+  status: BusinessStatus;
+}
+
 export interface UserProfile {
   id: string;
   username: string;
   email: string;
   role: UserRole;
+  business: BusinessSummary;
   createdAt: string;
   updatedAt: string;
 }
@@ -28,6 +42,10 @@ export interface RegisterInput {
   username: string;
   email: string;
   password: string;
+  /** Optional: the API derives a name from the username when omitted. */
+  businessName?: string;
+  /** ISO 3166-1 alpha-2, defaults to US. */
+  country?: string;
 }
 
 export interface LoginInput {
