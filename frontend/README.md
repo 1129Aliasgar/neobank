@@ -15,6 +15,7 @@ import { ApiClientError } from "@/lib/api";
 try {
   const { user } = await authApi.login({ email, password });
   // user.role is OWNER | ADMIN | EMPLOYEE | OPERATIONS
+  // user.business is { id, legalName, currency, status }
 } catch (error) {
   if (error instanceof ApiClientError) {
     // error.message is the API's message, error.status the HTTP status
