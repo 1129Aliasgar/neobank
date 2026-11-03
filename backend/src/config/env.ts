@@ -53,6 +53,18 @@ const schema = Joi.object({
     .valid("sandbox", "live")
     .default("sandbox"),
   /**
+   * Sandbox-only scenario slug sent at session creation (`approve`, `decline`,
+   * or any slug from the sandbox catalog). Empty disables it.
+   *
+   * This exists because Didit's sandbox registry only knows one company
+   * (`Sandbox Holdings Ltd` / `SANDBOX-0001`). Sending the customer's real
+   * company name in `expected_details` makes the KYB registry check fail with
+   * `KYB_REGISTRY_DATA_MISMATCH_WITH_EXPECTED` and auto-decline the session,
+   * even when the hosted picker is set to approve. The scenario supplies its
+   * own matching magic values instead. Ignored when the environment is live.
+   */
+  DIDIT_SANDBOX_SCENARIO: Joi.string().allow("").default("approve"),
+  /**
    * `auto` uses Didit when the three credentials are present and the simulator
    * otherwise. Setting `simulator` explicitly is how a developer demos the
    * flow while the Didit console is still being configured; production refuses
@@ -138,6 +150,7 @@ export const env = {
     workflowId: diditWorkflowId,
     webhookSecret: diditWebhookSecret,
     environment: value.DIDIT_ENVIRONMENT as "sandbox" | "live",
+    sandboxScenario: value.DIDIT_SANDBOX_SCENARIO as string,
     configured: diditConfigured,
   },
 

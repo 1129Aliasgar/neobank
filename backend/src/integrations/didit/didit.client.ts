@@ -37,6 +37,8 @@ export default class DiditClient implements VerificationProvider {
     input: CreateProviderSessionInput,
   ): Promise<ProviderSession> {
     const callback = this.callbackUrl();
+    const isSandbox = env.didit.environment !== "live";
+    const scenario = isSandbox ? env.didit.sandboxScenario : "";
 
     const body = {
       workflow_id: env.didit.workflowId,
@@ -58,13 +60,33 @@ export default class DiditClient implements VerificationProvider {
         attemptNumber: input.attemptNumber,
         environment: env.didit.environment,
       },
-      expected_details: {
-        company_name: input.business.legalName,
-        registry_country: this.registryCountry(input.business.address.state),
-        ...(input.business.registrationNumber
-          ? { registration_number: input.business.registrationNumber }
-          : {}),
-      },
+      /*
+       * Sandbox sends a scenario instead of expected details.
+       *
+       * Didit's sandbox registry only knows one company (`Sandbox Holdings
+       * Ltd` / `SANDBOX-0001`). Sending the customer's real name makes the
+       * KYB registry check fail with
+       * `KYB_REGISTRY_DATA_MISMATCH_WITH_EXPECTED` and auto-declines the
+       * session — the hosted approve picker cannot override it. The scenario
+       * expands its own matching magic values onto `expected_details`.
+       *
+       * Live keeps the expected details so a mistyped legal name or number
+       * still surfaces as a decision mismatch.
+       */
+      ...(scenario ? { sandbox_scenario: scenario } : {}),
+      ...(!isSandbox
+        ? {
+            expected_details: {
+              company_name: input.business.legalName,
+              registry_country: this.registryCountry(
+                input.business.address.state,
+              ),
+              ...(input.business.registrationNumber
+                ? { registration_number: input.business.registrationNumber }
+                : {}),
+            },
+          }
+        : {}),
     };
 
     const response = await this.request<DiditCreateSessionResponse>(
@@ -96,10 +118,19 @@ export default class DiditClient implements VerificationProvider {
       `/v3/session/${encodeURIComponent(sessionId)}/decision/`,
     );
 
+    const labels = this.rejectLabels(response);
+
     return {
       status: response.status ?? "In Review",
       sandboxScenario: response.sandbox_scenario ?? null,
-      rejectLabels: this.rejectLabels(response),
+      /*
+       * KYB declines arrive with an empty `decision.reject_labels`; the actual
+       * explanation lives in `decision_trace.status_warnings` (e.g. "Registry
+       * company data does not match expected details"). Fall back to it so the
+       * retry page can say something more useful than "declined".
+       */
+      rejectLabels:
+        labels.length > 0 ? labels : this.decisionTraceLabels(response),
       warnings: this.warnings(response),
     };
   }
@@ -170,6 +201,34 @@ export default class DiditClient implements VerificationProvider {
     return Array.isArray(labels)
       ? labels.filter((label): label is string => typeof label === "string")
       : [];
+  }
+
+  /**
+   * Error-level entries from `decision_trace.status_warnings`.
+   *
+   * The human `short_description` is preferred over the machine `risk` slug:
+   * it is what the customer reads on the retry page.
+   */
+  private decisionTraceLabels(response: DiditDecisionResponse): string[] {
+    const warnings = response.decision_trace?.status_warnings;
+
+    if (!Array.isArray(warnings)) {
+      return [];
+    }
+
+    return warnings
+      .filter((warning) => warning?.log_type === "error")
+      .map((warning) => {
+        if (
+          typeof warning.short_description === "string" &&
+          warning.short_description.trim()
+        ) {
+          return warning.short_description.trim();
+        }
+
+        return typeof warning.risk === "string" ? warning.risk : null;
+      })
+      .filter((label): label is string => Boolean(label));
   }
 
   private warnings(response: DiditDecisionResponse): string[] {

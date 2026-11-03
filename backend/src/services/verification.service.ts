@@ -78,11 +78,20 @@ export interface ApplyDecisionInput {
   actorType: AuditActorType;
   actorId: string | null;
   webhookEventId?: string;
+  /**
+   * Webhook payloads carry only the status; a rejection's reason is on the
+   * decision endpoint. When set, an empty-label rejection is re-read once.
+   */
+  enrich?: boolean;
 }
 
 export interface ApplyDecisionResult {
   applied: boolean;
-  reason: "duplicate" | "terminal-conflict" | null;
+  reason:
+    | "duplicate"
+    | "terminal-conflict"
+    | "stale-provider"
+    | null;
   verification: VerificationRecord;
 }
 
@@ -399,7 +408,33 @@ export default class VerificationService {
   async applyDecision(
     input: ApplyDecisionInput,
   ): Promise<ApplyDecisionResult> {
-    const { verification, decision } = input;
+    const { verification } = input;
+    let decision = input.decision;
+
+    /*
+     * The `status.updated` webhook for a decline carries no labels (Didit only
+     * puts them on the decision endpoint). Read the full decision once so the
+     * retry page can show the actual reason instead of a bare "declined".
+     */
+    if (
+      input.enrich &&
+      decision.rejectLabels.length === 0 &&
+      verification.providerSessionId &&
+      mapProviderStatus(decision.status).verificationStatus ===
+        VERIFICATION_STATUS.REJECTED
+    ) {
+      try {
+        decision = await this.provider.getDecision(
+          verification.providerSessionId,
+        );
+      } catch (error) {
+        this.logger.warn("could not read rejection details", {
+          verificationId: verification.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     const business = await this.businessRepository.findById(
       verification.businessId,
     );

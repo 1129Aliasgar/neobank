@@ -10,8 +10,6 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { authApi } from "@/lib/auth";
 import { businessApi, routeForStep } from "@/lib/business";
 
-const DEMO = { email: "owner@neobank.dev", password: "NeoBank@123" };
-
 function messageOf(error: unknown): string {
   return error instanceof Error
     ? error.message
@@ -94,38 +92,19 @@ export function LoginForm() {
         <SubmitButton loading={submitting}>Sign in</SubmitButton>
       </div>
 
-      <p className="text-[13px] leading-relaxed text-ink-muted">
-        Opening an account for a company?{" "}
-        <Link
-          href="/register"
-          className="text-ink underline decoration-teal/40 underline-offset-4 transition-colors hover:text-teal"
-        >
-          Register the business
-        </Link>
-        .
-      </p>
-
       <div className="mt-2 border-t border-rule pt-5">
-        <div className="flex items-baseline justify-between gap-3">
-          <p className="eyebrow">Demo access</p>
-          <button
-            type="button"
-            onClick={() => {
-              setEmail(DEMO.email);
-              setPassword(DEMO.password);
-              setError(null);
-            }}
-            className="font-mono text-[9px] uppercase tracking-[0.18em] text-teal transition-opacity hover:opacity-70"
+        <p className="text-[13px] leading-relaxed text-ink-muted">
+          No account yet?{" "}
+          <Link
+            href="/register"
+            className="font-medium text-ink underline decoration-teal/40 underline-offset-4 transition-colors hover:text-teal"
           >
-            Fill credentials
-          </button>
-        </div>
-        <dl className="mt-3 grid grid-cols-[3.5rem_1fr] gap-y-1.5 font-mono text-[11px] text-ink-muted">
-          <dt className="text-ink-muted/60">Email</dt>
-          <dd className="truncate text-ink">{DEMO.email}</dd>
-          <dt className="text-ink-muted/60">Password</dt>
-          <dd className="text-ink">{DEMO.password}</dd>
-        </dl>
+            Create a business account
+          </Link>
+        </p>
+        <p className="mt-2 font-mono text-[9px] leading-relaxed uppercase tracking-[0.16em] text-ink-muted/70">
+          Registration always creates the business owner.
+        </p>
       </div>
     </form>
   );

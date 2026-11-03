@@ -145,7 +145,11 @@ export interface DecisionPlan {
   businessStatus: BusinessStatus | null;
   actionRequired: boolean;
   /** Machine-readable reason for `apply: false`, safe to log. */
-  reason: "duplicate" | "terminal-conflict" | null;
+  reason:
+    | "duplicate"
+    | "terminal-conflict"
+    | "stale-provider"
+    | null;
 }
 
 /**
@@ -180,6 +184,26 @@ export function planDecision(input: DecisionPlanInput): DecisionPlan {
       businessStatus: null,
       actionRequired: false,
       reason: "terminal-conflict",
+    };
+  }
+
+  /*
+   * A provider read can briefly report `Not Started` for a session we already
+   * watched progress — reopening the hosted link resets the provider's view.
+   * Applying it would rewind the attempt and show the customer a fresh "start"
+   * button mid-flow, so it is treated as a stale read instead.
+   */
+  if (
+    mapped.verificationStatus === VERIFICATION_STATUS.NOT_STARTED &&
+    (current === VERIFICATION_STATUS.PENDING ||
+      current === VERIFICATION_STATUS.REVIEW)
+  ) {
+    return {
+      apply: false,
+      verificationStatus: current,
+      businessStatus: null,
+      actionRequired: false,
+      reason: "stale-provider",
     };
   }
 

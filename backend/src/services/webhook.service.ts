@@ -217,6 +217,9 @@ export default class WebhookService {
         actorType: "SYSTEM",
         actorId: null,
         webhookEventId: event.id,
+        /* The payload has only the status; a decline's reason lives on the
+         * decision endpoint. */
+        enrich: true,
       });
 
       if (!result.applied) {
@@ -224,7 +227,9 @@ export default class WebhookService {
           event.id,
           result.reason === "duplicate"
             ? "Duplicate decision ignored"
-            : "Terminal decision conflict left for operations",
+            : result.reason === "stale-provider"
+              ? "Stale provider status ignored"
+              : "Terminal decision conflict left for operations",
         );
       }
 

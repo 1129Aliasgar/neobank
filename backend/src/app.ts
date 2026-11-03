@@ -65,13 +65,14 @@ function corsOrigin(): boolean | string[] {
 
 server.setConfig((app: Application) => {
   /*
-   * Render terminates TLS in front of the service. Trusting exactly one proxy
-   * hop makes `req.ip` the real client address (rate limiting and logs) and
-   * refuses to honour a client-supplied X-Forwarded-For chain beyond it.
+   * Render terminates TLS in front of the service. Locally, `ngrok` forwards
+   * from loopback and stamps `X-Forwarded-For`.
+   *
+   * Trusting that hop makes `req.ip` the real client address for rate limiting
+   * and logs. A directly connected client cannot spoof the header because only
+   * loopback is trusted in development.
    */
-  if (env.isProduction) {
-    app.set("trust proxy", 1);
-  }
+  app.set("trust proxy", env.isProduction ? 1 : "loopback");
 
   app.disable("x-powered-by");
 

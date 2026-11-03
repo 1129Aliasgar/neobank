@@ -11,8 +11,8 @@
 export interface DiditCreateSessionBody {
   workflow_id: string;
   vendor_data: string;
-  callback: string;
-  callback_method: "initiator" | "completer" | "both";
+  callback?: string;
+  callback_method?: "initiator" | "completer" | "both";
   metadata: Record<string, unknown>;
   expected_details?: {
     company_name?: string;
@@ -40,6 +40,15 @@ export interface DiditDecisionFeature {
   node_id?: string;
 }
 
+export interface DiditDecisionWarning {
+  risk?: string;
+  short_description?: string;
+  check_status?: string;
+  log_type?: string;
+  feature?: string;
+  node_id?: string;
+}
+
 export interface DiditDecisionResponse {
   session_id?: string;
   status: string;
@@ -51,5 +60,15 @@ export interface DiditDecisionResponse {
       | string[]
       | Array<DiditDecisionFeature>
       | Record<string, unknown>;
+  };
+  /**
+   * Present on every decision. `status_warnings` is where KYB declines explain
+   * themselves when `decision.reject_labels` is empty.
+   */
+  decision_trace?: {
+    status?: string;
+    decided_by?: string;
+    decided_at?: string;
+    status_warnings?: DiditDecisionWarning[];
   };
 }

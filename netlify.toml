@@ -1,0 +1,33 @@
+# Netlify configuration for the Next.js frontend.
+#
+# In the Netlify UI set "Base directory" to `frontend` (this repo is a
+# backend/ + frontend/ monorepo). Netlify detects Next.js 16 and uses its
+# OpenNext adapter automatically, so no `publish` directory or redirects are
+# needed here — it manages `.next` itself.
+#
+# Connect this repository in Netlify (or run `netlify deploy --build`) rather
+# than dragging the folder into "Deploy manually": a manual deploy copies files
+# verbatim, never runs `next build`, and therefore serves source files with no
+# page at `/` (a 404).
+#
+# Set `NEXT_PUBLIC_API_URL` in Site configuration → Environment variables to
+# the public API base, e.g. https://your-api.onrender.com/api/v1. Without it the
+# browser falls back to http://localhost:5000 and every call fails on the
+# deployed site.
+
+[build]
+  command = "npm run build"
+  # The Next.js runtime turns this build into Netlify Functions + static
+  # assets. Leaving it unset (or pointing at the source directory) publishes
+  # the repository files, which is why the site answered 404 at `/`.
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    X-Frame-Options = "DENY"
