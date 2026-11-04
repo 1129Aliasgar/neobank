@@ -34,8 +34,8 @@ export interface NavItem {
 /**
  * The owner/admin rail.
  *
- * Overview is the only live destination. Team is visible to operators as a
- * disabled item because the product brief explicitly calls it out.
+ * Account, Transactions and Cards are live. Team stays a visible-but-deferred
+ * item until Module 5 ships invitations and role management.
  */
 const OPERATOR_NAV: NavItem[] = [
   {
@@ -66,6 +66,13 @@ const OPERATOR_NAV: NavItem[] = [
     href: "/dashboard/transactions",
     hint: "Ledger movement and receipts",
   },
+  {
+    key: "cards",
+    label: "Cards",
+    icon: "card",
+    href: "/dashboard/cards",
+    hint: "Issue and control employee cards",
+  },
 ];
 
 /**
@@ -78,6 +85,13 @@ const EMPLOYEE_NAV: NavItem[] = [
     icon: "overview",
     href: "/dashboard",
     hint: "Your account and your card",
+  },
+  {
+    key: "card",
+    label: "My card",
+    icon: "card",
+    href: "/dashboard/card",
+    hint: "Your assigned virtual card",
   },
 ];
 
@@ -194,7 +208,11 @@ export function sectionForPath(pathname: string): string {
     return "Team";
   }
 
-  if (pathname.startsWith("/dashboard/card")) {
+  if (pathname.startsWith("/dashboard/cards")) {
+    return "Cards";
+  }
+
+  if (pathname === "/dashboard/card" || pathname.startsWith("/dashboard/card/")) {
     return "My card";
   }
 

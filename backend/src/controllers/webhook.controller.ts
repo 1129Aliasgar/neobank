@@ -22,6 +22,7 @@ import BaseController from "./base.controller.js";
 import { STATUS_CODE } from "../constants/constants.js";
 import WebhookService from "../services/webhook.service.js";
 import Logger from "../utils/logger.js";
+import CardService from "../services/card.service.js";
 
 @controller("/api/v1/webhooks")
 export default class WebhookController extends BaseController {
@@ -30,6 +31,9 @@ export default class WebhookController extends BaseController {
 
   @inject(TYPES.Logger)
   logger!: Logger;
+
+  @inject(TYPES.CardService)
+  cardService!: CardService;
 
   @httpPost("/didit")
   async didit(req: Request, res: Response) {
@@ -49,6 +53,18 @@ export default class WebhookController extends BaseController {
         error: error instanceof Error ? error.message : String(error),
       });
 
+      return this.handleError(res, error);
+    }
+  }
+
+  @httpPost("/lithic")
+  async lithic(req: Request, res: Response) {
+    try {
+      const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from(typeof req.body === "string" ? req.body : JSON.stringify(req.body ?? {}), "utf8");
+      const outcome = await this.cardService.handleWebhook(raw, req.headers);
+      return this.success(res, { outcome }, STATUS_CODE.OK);
+    } catch (error) {
+      this.logger.warn("Lithic webhook processing failed", { error: error instanceof Error ? error.message : String(error) });
       return this.handleError(res, error);
     }
   }

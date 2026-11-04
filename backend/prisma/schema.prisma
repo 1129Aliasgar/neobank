@@ -110,8 +110,8 @@ enum VerificationEnvironment {
 
 enum WebhookProvider {
   DIDIT
-  /// Added in Module 3 with Stripe.
   STRIPE
+  LITHIC
 }
 
 enum WebhookStatus {
@@ -132,10 +132,12 @@ enum AccountStatus {
   FROZEN
   CLOSED
 }
+
 enum LedgerEnvironment {
   SANDBOX
   LIVE
 }
+
 enum LedgerAccountType {
   ASSET
   LIABILITY
@@ -143,10 +145,12 @@ enum LedgerAccountType {
   REVENUE
   EXPENSE
 }
+
 enum LedgerDirection {
   DEBIT
   CREDIT
 }
+
 enum LedgerTransactionKind {
   DEPOSIT
   CARD_CAPTURE
@@ -157,20 +161,66 @@ enum LedgerTransactionKind {
   REVERSAL
   ADJUSTMENT
 }
+
 enum LedgerTransactionStatus {
   POSTED
   REVERSED
 }
+
 enum HoldStatus {
   ACTIVE
   CAPTURED
   RELEASED
   EXPIRED
 }
+
 enum HoldSource {
   CARD_AUTHORIZATION
   PAYMENT_REQUEST
   SANDBOX
+}
+
+enum CardProvider {
+  LITHIC
+}
+
+enum CardholderStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+  REQUIREMENTS_PAST_DUE
+  CANCELED
+}
+
+enum CardStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+  CANCELED
+  EXPIRED
+}
+
+enum CardType {
+  VIRTUAL
+  PHYSICAL
+}
+
+enum CardAuthorizationStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  PARTIALLY_CAPTURED
+  CAPTURED
+  REVERSED
+  EXPIRED
+}
+
+enum CardTransactionKind {
+  AUTHORIZATION
+  CAPTURE
+  VOID
+  REFUND
+  REVERSAL
 }
 
 // ==========================================
@@ -196,6 +246,7 @@ model User {
   // Relationships
   blacklistedTokens BlacklistToken[]
   memberships       BusinessMember[]
+  cardholders       Cardholder[]
 
   @@index([isDeleted, createdAt])
 }
@@ -270,77 +321,86 @@ model Business {
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   // Relationships
-  members       BusinessMember[]
-  verifications Verification[]
-  webhookEvents WebhookEvent[]
-  auditLogs     AuditLog[]
-  accounts Account[]
-  ledgerAccounts LedgerAccount[]
+  members            BusinessMember[]
+  verifications      Verification[]
+  webhookEvents      WebhookEvent[]
+  auditLogs          AuditLog[]
+  accounts           Account[]
+  ledgerAccounts     LedgerAccount[]
   ledgerTransactions LedgerTransaction[]
-  holds Hold[]
+  holds              Hold[]
+  cardholders        Cardholder[]
+  cards              Card[]
+  cardAuthorizations CardAuthorization[]
+  cardTransactions   CardTransaction[]
 
   @@index([status, createdAt])
 }
 
 model Account {
-  id String @id @default(cuid())
-  businessId String
-  currency String @default("USD") @db.Char(3)
-  status AccountStatus @default(ACTIVE)
-  environment LedgerEnvironment @default(SANDBOX)
-  openedAt DateTime @default(now()) @db.Timestamptz(3)
-  frozenAt DateTime? @db.Timestamptz(3)
-  closedAt DateTime? @db.Timestamptz(3)
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
-  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
-  ledgerAccounts LedgerAccount[]
-  transactions LedgerTransaction[]
-  holds Hold[]
+  id                 String              @id @default(cuid())
+  businessId         String
+  currency           String              @default("USD") @db.Char(3)
+  status             AccountStatus       @default(ACTIVE)
+  environment        LedgerEnvironment   @default(SANDBOX)
+  openedAt           DateTime            @default(now()) @db.Timestamptz(3)
+  frozenAt           DateTime?           @db.Timestamptz(3)
+  closedAt           DateTime?           @db.Timestamptz(3)
+  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime            @updatedAt @db.Timestamptz(3)
+  business           Business            @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  ledgerAccounts     LedgerAccount[]
+  transactions       LedgerTransaction[]
+  holds              Hold[]
+  cardAuthorizations CardAuthorization[]
+  cardTransactions   CardTransaction[]
+
   @@unique([businessId, currency])
   @@index([status, openedAt])
 }
 
 model LedgerAccount {
-  id String @id @default(cuid())
+  id         String            @id @default(cuid())
   businessId String
-  accountId String
-  code String
-  name String
-  type LedgerAccountType
-  currency String @db.Char(3)
-  isActive Boolean @default(true)
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
-  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  entries LedgerEntry[]
+  accountId  String
+  code       String
+  name       String
+  type       LedgerAccountType
+  currency   String            @db.Char(3)
+  isActive   Boolean           @default(true)
+  createdAt  DateTime          @default(now()) @db.Timestamptz(3)
+  business   Business          @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  account    Account           @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  entries    LedgerEntry[]
+
   @@unique([accountId, code])
   @@index([businessId, code])
 }
 
 model LedgerTransaction {
-  id String @id @default(cuid())
-  businessId String
-  accountId String
-  kind LedgerTransactionKind
-  status LedgerTransactionStatus @default(POSTED)
-  currency String @db.Char(3)
-  amountMinor BigInt
-  description String
-  idempotencyKey String
-  requestHash String
-  sourceType String
-  sourceId String?
-  occurredAt DateTime @db.Timestamptz(3)
-  postedAt DateTime @default(now()) @db.Timestamptz(3)
-  environment LedgerEnvironment @default(SANDBOX)
-  reversesTransactionId String? @unique
-  reverses LedgerTransaction? @relation("LedgerReversal", fields: [reversesTransactionId], references: [id], onDelete: Restrict)
-  reversedBy LedgerTransaction? @relation("LedgerReversal")
-  createdByUserId String?
-  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
-  entries LedgerEntry[]
+  id                    String                  @id @default(cuid())
+  businessId            String
+  accountId             String
+  kind                  LedgerTransactionKind
+  status                LedgerTransactionStatus @default(POSTED)
+  currency              String                  @db.Char(3)
+  amountMinor           BigInt
+  description           String
+  idempotencyKey        String
+  requestHash           String
+  sourceType            String
+  sourceId              String?
+  occurredAt            DateTime                @db.Timestamptz(3)
+  postedAt              DateTime                @default(now()) @db.Timestamptz(3)
+  environment           LedgerEnvironment       @default(SANDBOX)
+  reversesTransactionId String?                 @unique
+  reverses              LedgerTransaction?      @relation("LedgerReversal", fields: [reversesTransactionId], references: [id], onDelete: Restrict)
+  reversedBy            LedgerTransaction?      @relation("LedgerReversal")
+  createdByUserId       String?
+  account               Account                 @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  business              Business                @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  entries               LedgerEntry[]
+
   @@unique([businessId, idempotencyKey])
   @@index([accountId, postedAt, id])
   @@index([businessId, kind, postedAt])
@@ -348,40 +408,135 @@ model LedgerTransaction {
 }
 
 model LedgerEntry {
-  id String @id @default(cuid())
-  transactionId String
+  id              String            @id @default(cuid())
+  transactionId   String
   ledgerAccountId String
-  direction LedgerDirection
-  amountMinor BigInt
-  currency String @db.Char(3)
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  transaction LedgerTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
-  ledgerAccount LedgerAccount @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  direction       LedgerDirection
+  amountMinor     BigInt
+  currency        String            @db.Char(3)
+  createdAt       DateTime          @default(now()) @db.Timestamptz(3)
+  transaction     LedgerTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  ledgerAccount   LedgerAccount     @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+
   @@unique([transactionId, ledgerAccountId, direction])
   @@index([ledgerAccountId, createdAt])
 }
 
 model Hold {
-  id String @id @default(cuid())
-  businessId String
-  accountId String
-  amountMinor BigInt
-  capturedMinor BigInt @default(0)
-  currency String @db.Char(3)
-  status HoldStatus @default(ACTIVE)
-  source HoldSource
-  sourceId String?
+  id             String     @id @default(cuid())
+  businessId     String
+  accountId      String
+  amountMinor    BigInt
+  capturedMinor  BigInt     @default(0)
+  currency       String     @db.Char(3)
+  status         HoldStatus @default(ACTIVE)
+  source         HoldSource
+  sourceId       String?
   idempotencyKey String
-  expiresAt DateTime @db.Timestamptz(3)
-  capturedAt DateTime?
-  releasedAt DateTime?
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
-  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  expiresAt      DateTime   @db.Timestamptz(3)
+  capturedAt     DateTime?
+  releasedAt     DateTime?
+  createdAt      DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime   @updatedAt @db.Timestamptz(3)
+  account        Account    @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  business       Business   @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
   @@unique([businessId, idempotencyKey])
   @@unique([source, sourceId])
   @@index([accountId, status, expiresAt])
+}
+
+model Cardholder {
+  id                   String           @id @default(cuid())
+  businessId           String
+  userId               String
+  provider             CardProvider     @default(LITHIC)
+  /// Lithic account holder token (`/account_holders`).
+  providerCardholderId String           @unique
+  /// Lithic account token. Cards are created against this, not the holder.
+  providerAccountId    String?
+  status               CardholderStatus @default(PENDING)
+  providerRequirements Json?
+  createdAt            DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime         @updatedAt @db.Timestamptz(3)
+  business             Business         @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  user                 User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  cards                Card[]
+
+  @@unique([businessId, userId, provider])
+  @@index([businessId, status])
+  @@index([providerAccountId])
+}
+
+model Card {
+  id                    String              @id @default(cuid())
+  businessId            String
+  cardholderId          String
+  provider              CardProvider        @default(LITHIC)
+  providerCardId        String              @unique
+  type                  CardType            @default(VIRTUAL)
+  status                CardStatus          @default(PENDING)
+  currency              String              @db.Char(3)
+  last4                 String?
+  brand                 String?
+  expMonth              Int?
+  expYear               Int?
+  spendingLimitMinor    BigInt?
+  spendingLimitInterval String?
+  createdAt             DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime            @updatedAt @db.Timestamptz(3)
+  business              Business            @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  cardholder            Cardholder          @relation(fields: [cardholderId], references: [id], onDelete: Restrict)
+  authorizations        CardAuthorization[]
+  cardTransactions      CardTransaction[]
+
+  @@index([businessId, status])
+  @@index([cardholderId, status])
+}
+
+model CardAuthorization {
+  id                      String                  @id @default(cuid())
+  businessId              String
+  accountId               String
+  cardId                  String
+  providerAuthorizationId String                  @unique
+  amountMinor             BigInt
+  capturedMinor           BigInt                  @default(0)
+  currency                String                  @db.Char(3)
+  status                  CardAuthorizationStatus @default(PENDING)
+  merchantName            String?
+  merchantMcc             String?
+  providerCreatedAt       DateTime?               @db.Timestamptz(3)
+  createdAt               DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                @updatedAt @db.Timestamptz(3)
+  business                Business                @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  account                 Account                 @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  card                    Card                    @relation(fields: [cardId], references: [id], onDelete: Restrict)
+  transactions            CardTransaction[]
+
+  @@index([businessId, status, createdAt])
+  @@index([accountId, status])
+}
+
+model CardTransaction {
+  id                    String              @id @default(cuid())
+  businessId            String
+  accountId             String
+  cardId                String
+  authorizationId       String?
+  providerTransactionId String              @unique
+  kind                  CardTransactionKind
+  amountMinor           BigInt
+  currency              String              @db.Char(3)
+  occurredAt            DateTime            @db.Timestamptz(3)
+  createdAt             DateTime            @default(now()) @db.Timestamptz(3)
+  business              Business            @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  account               Account             @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  card                  Card                @relation(fields: [cardId], references: [id], onDelete: Restrict)
+  authorization         CardAuthorization?  @relation(fields: [authorizationId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, occurredAt])
+  @@index([authorizationId])
 }
 
 // ==========================================

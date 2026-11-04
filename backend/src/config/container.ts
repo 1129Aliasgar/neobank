@@ -14,6 +14,7 @@ import BusinessService from "../services/business.service.js";
 import VerificationService from "../services/verification.service.js";
 import WebhookService from "../services/webhook.service.js";
 import LedgerService from "../services/ledger.service.js";
+import CardService from "../services/card.service.js";
 
 // repositories
 import AuthRepository from "../repositories/auth.repository.js";
@@ -74,6 +75,7 @@ container
   .inSingletonScope();
 container.bind(TYPES.WebhookService).to(WebhookService).inSingletonScope();
 container.bind(TYPES.LedgerService).to(LedgerService).inSingletonScope();
+container.bind(TYPES.CardService).to(CardService).inSingletonScope();
 
 // Repository bindings
 container.bind(TYPES.AuthRepository).to(AuthRepository).inSingletonScope();

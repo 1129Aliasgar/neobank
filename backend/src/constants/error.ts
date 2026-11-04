@@ -69,6 +69,7 @@ export const LEDGER_ERRORS = {
   TRANSACTION_NOT_FOUND: "Transaction not found",
   REVERSAL_OF_REVERSAL: "A reversal cannot be reversed",
   ALREADY_REVERSED: "Transaction has already been reversed",
+  OPERATIONS_ONLY: "This action requires the operations role",
   SANDBOX_DISABLED: "Sandbox ledger tools are disabled",
 } as const;
 
@@ -76,4 +77,21 @@ export const WEBHOOK_ERRORS = {
   INVALID_SIGNATURE: "Invalid webhook signature",
   STALE_TIMESTAMP: "Webhook timestamp is outside the accepted window",
   MALFORMED_PAYLOAD: "Malformed webhook payload",
+} as const;
+
+export const CARD_ERRORS = {
+  PROVIDER_UNAVAILABLE: "Card issuing is temporarily unavailable",
+  BUSINESS_NOT_ACTIVE: "Business must be active before issuing cards",
+  EMPLOYEE_REQUIRED: "Cards can only be issued to active employees",
+  CARDHOLDER_NOT_FOUND: "Cardholder not found",
+  CARD_NOT_FOUND: "Card not found",
+  CARD_NOT_ACTIVE: "Card is not active",
+  INVALID_LIMIT: "Spending limit must be a positive amount in cents",
+  INVALID_INTERVAL:
+    "Spending limit interval must be ANNUALLY, FOREVER, MONTHLY or TRANSACTION",
+  CARDHOLDER_ACCOUNT_MISSING:
+    "Cardholder has no Lithic account token; retry cardholder creation",
+  SANDBOX_ONLY: "Card simulation is only available in Lithic Sandbox",
+  AUTHORIZATION_NOT_FOUND: "Card authorization not found",
+  INSUFFICIENT_FUNDS: "Authorization declined: insufficient available funds",
 } as const;

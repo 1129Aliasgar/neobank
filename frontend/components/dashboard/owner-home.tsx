@@ -6,6 +6,7 @@ import { useDashboardSession } from "@/lib/dashboard-session";
 import { RoleBadge } from "./role-badge";
 import { StatusPill } from "@/components/ui/alert";
 import { businessStatus } from "@/lib/dashboard";
+import Link from "next/link";
 
 const PLACEHOLDERS = [
   { label: "Balance", verb: "Opens in", module: "Module 3", mark: "01" },
@@ -49,9 +50,7 @@ export function OwnerHome({ current }: { current: CurrentBusiness }) {
             <p className="mt-8 font-heading text-[1.35rem] font-light leading-none tracking-[-0.02em] text-ink">
               {item.verb}
             </p>
-            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.15em] text-teal">
-              {item.module}
-            </p>
+            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.15em] text-teal">{item.label === "Cards" ? <Link href="/dashboard/cards" className="hover:underline">Open cards</Link> : item.module}</p>
           </article>
         ))}
       </section>

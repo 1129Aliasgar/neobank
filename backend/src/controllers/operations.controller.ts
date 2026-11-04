@@ -23,7 +23,7 @@ export default class OperationsController extends BaseController {
 
   @httpPost(
     "/transactions/:id/reverse",
-    authMiddleware([USER_ROLE.OPERATIONS, USER_ROLE.OWNER, USER_ROLE.ADMIN]),
+    authMiddleware([USER_ROLE.OPERATIONS]),
   )
   async reverse(req: Request, res: Response) {
     try {

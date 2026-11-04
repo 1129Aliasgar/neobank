@@ -244,3 +244,18 @@ when a choice is made, not reconstructed at the end.
 
 - Stripe Issuing is unavailable in the project region; Module 4 uses Lithic Sandbox for virtual cards and signed webhooks.
 - The provider boundary stays neutral, so the domain model and ledger flow remain unchanged; Lithic receives `/api/v1/webhooks/lithic`.
+
+## 2026-11-03T20:20Z — Module 4 implementation boundary
+
+- Lithic REST calls use one Sandbox API key; webhook secrets are subscription-scoped and only required for signed event delivery.
+- Card authorization, holds, captures and safe card controls are implemented now; PAN/CVC storage, merchant Payments and physical cards remain out of scope.
+
+## 2026-11-04T08:10Z - Over-capture posts the real settlement
+
+- A Lithic clearing is final and may exceed the authorization, so the ledger posts the settled amount instead of a capped one.
+- The hold keeps its database cap and is released; the excess is recorded on the audit row, never by editing a money row.
+
+## 2026-11-04T08:12Z - Manual reversal is operations-only
+
+- 'OPERATIONS' is the only role allowed to reverse a ledger transaction; owners and admins cannot bypass maker-checker.
+- Route, service guard and audit were aligned so hiding the button is not the control.

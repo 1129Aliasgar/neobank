@@ -1,6 +1,7 @@
 "use client";
 
 import type { CurrentBusiness } from "@/lib/business";
+import Link from "next/link";
 import { useDashboardSession } from "@/lib/dashboard-session";
 import { RoleBadge } from "./role-badge";
 
@@ -36,8 +37,9 @@ export function EmployeeHome({ current }: { current: CurrentBusiness }) {
           A virtual card will appear here once your admin issues one.
         </p>
         <p className="mt-3 max-w-lg text-[12px] leading-relaxed text-ink-muted">
-          Spending limit and your transactions will live on this page.
+          Spending limit and your transactions live on your card page.
         </p>
+        <Link href="/dashboard/card" className="mt-5 inline-flex border-b border-teal pb-1 font-mono text-[10px] uppercase tracking-[0.14em] text-teal">Open my card</Link>
       </section>
 
       <section className="mt-7 border-t border-rule pt-5">

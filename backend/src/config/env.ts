@@ -89,6 +89,14 @@ const schema = Joi.object({
   LEDGER_SANDBOX_TOOLS_ACK: Joi.string().allow("").default(""),
   SANDBOX_FUNDING_DAILY_LIMIT_MINOR: Joi.string().pattern(/^\d+$/).default("20000000"),
   SANDBOX_DEPOSIT_MAX_MINOR: Joi.string().pattern(/^\d+$/).default("5000000"),
+  /* ---- Lithic card issuing (Sandbox) ---- */
+  LITHIC_API_KEY: Joi.string().allow("").default(""),
+  LITHIC_BASE_URL: Joi.string().uri({ scheme: ["https"] }).default("https://sandbox.lithic.com/v1"),
+  LITHIC_ENVIRONMENT: Joi.string().valid("sandbox", "production").default("sandbox"),
+  LITHIC_ENABLED: Joi.boolean().truthy("true").falsy("false").default(false),
+  LITHIC_EVENT_SUBSCRIPTION_TOKEN: Joi.string().allow("").default(""),
+  LITHIC_WEBHOOK_SECRET: Joi.string().allow("").default(""),
+  LITHIC_WEBHOOK_TOLERANCE_SECONDS: Joi.number().integer().min(30).max(900).default(300),
 }).unknown(true); // a platform may inject extra vars (e.g. RENDER_*)
 
 const { error, value } = schema.validate(process.env, {
@@ -169,6 +177,16 @@ export const env = {
     sandboxToolsAck: value.LEDGER_SANDBOX_TOOLS_ACK as string,
     fundingDailyLimitMinor: BigInt(value.SANDBOX_FUNDING_DAILY_LIMIT_MINOR as string),
     depositMaxMinor: BigInt(value.SANDBOX_DEPOSIT_MAX_MINOR as string),
+  },
+  lithic: {
+    apiKey: (value.LITHIC_API_KEY as string) || "",
+    baseUrl: value.LITHIC_BASE_URL as string,
+    environment: value.LITHIC_ENVIRONMENT as "sandbox" | "production",
+    enabled: value.LITHIC_ENABLED as boolean,
+    eventSubscriptionToken: (value.LITHIC_EVENT_SUBSCRIPTION_TOKEN as string) || "",
+    webhookSecret: (value.LITHIC_WEBHOOK_SECRET as string) || "",
+    webhookToleranceSeconds: value.LITHIC_WEBHOOK_TOLERANCE_SECONDS as number,
+    configured: Boolean(value.LITHIC_API_KEY),
   },
 } as const;
 

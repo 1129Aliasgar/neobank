@@ -26,9 +26,37 @@ type Line = {
   amountMinor: bigint;
 };
 
+/** Internal outcome of a card authorization decision. */
+export type CardAuthorizationOutcome = {
+  recorded: boolean;
+  approved: boolean;
+  authorizationId: string | null;
+  holdId: string | null;
+  replayed: boolean;
+  reason?: string;
+};
+
+/** Internal outcome of a capture / void / reversal. */
+export type CardCaptureOutcome = {
+  applied: boolean;
+  replayed: boolean;
+  reason?: string;
+  capturedMinor?: bigint;
+};
+
 function ensureOperator(role: UserRole) {
   if (role !== USER_ROLE.OWNER && role !== USER_ROLE.ADMIN)
     throw new ApiError(LEDGER_ERRORS.EMPLOYEE_BALANCE_FORBIDDEN, 403);
+}
+
+/**
+ * Manual reversal is an operations control, not a customer action. An owner or
+ * admin reversing their own payment would bypass the maker-checker rule that
+ * Module 5 adds, so this is deliberately narrower than `ensureOperator`.
+ */
+function ensureOperations(role: UserRole) {
+  if (role !== USER_ROLE.OPERATIONS)
+    throw new ApiError(LEDGER_ERRORS.OPERATIONS_ONLY, 403);
 }
 
 function ensureActive(status: string) {
@@ -127,11 +155,19 @@ export default class LedgerService {
       where: { accountId, status: "ACTIVE", expiresAt: { lte: now } },
       data: { status: "EXPIRED", releasedAt: now },
     });
-    const holds = await tx.hold.aggregate({
+    const holds = await tx.hold.findMany({
       where: { accountId, status: "ACTIVE", expiresAt: { gt: now } },
-      _sum: { amountMinor: true },
+      select: { amountMinor: true, capturedMinor: true },
     });
-    const holdMinor = holds._sum.amountMinor ?? 0n;
+    /*
+     * A partial capture keeps the authorization hold ACTIVE but only the
+     * uncaptured remainder should reduce available funds. Summing the original
+     * amount here was over-reserving the wallet until the hold expired.
+     */
+    const holdMinor = holds.reduce(
+      (sum, hold) => sum + (hold.amountMinor - hold.capturedMinor),
+      0n,
+    );
     return {
       ledgerMinor,
       holdMinor,
@@ -170,7 +206,7 @@ export default class LedgerService {
       businessId: string;
       accountId: string;
       currency: string;
-      kind: "DEPOSIT" | "CARD_CAPTURE" | "REVERSAL";
+      kind: "DEPOSIT" | "CARD_CAPTURE" | "CARD_REFUND" | "REVERSAL";
       amountMinor: bigint;
       description: string;
       idempotencyKey: string;
@@ -517,7 +553,7 @@ export default class LedgerService {
       const { account, currency } = await this.account(tx, businessId);
       if (hold.status !== "ACTIVE" || hold.expiresAt <= new Date())
         throw new ApiError(LEDGER_ERRORS.HOLD_NOT_ACTIVE, 409);
-      if (amount > hold.amountMinor)
+      if (amount > hold.amountMinor - hold.capturedMinor)
         throw new ApiError(LEDGER_ERRORS.CAPTURE_EXCEEDS_HOLD, 409);
       const description =
         typeof body.memo === "string" && body.memo.trim()
@@ -548,7 +584,7 @@ export default class LedgerService {
         where: { id: hold.id },
         data: {
           status: "CAPTURED",
-          capturedMinor: amount,
+          capturedMinor: hold.capturedMinor + amount,
           capturedAt: new Date(),
           releasedAt: new Date(),
         },
@@ -586,6 +622,643 @@ export default class LedgerService {
         hold: this.holdView({ ...hold, status: "RELEASED" }),
         sandbox: true,
       };
+    });
+  }
+
+  /* ----------------------------------------------------------------------- *
+   * Card money primitives
+   *
+   * CardService calls these from the Lithic webhook pipeline. They are not
+   * exposed over HTTP and deliberately take a business id, not a JWT role:
+   * the provider event is the authority, the adapter is not.
+   * ----------------------------------------------------------------------- */
+
+  async authorizeCard(input: {
+    businessId: string;
+    cardId: string;
+    providerAuthorizationId: string;
+    amountMinor: bigint;
+    cardActive: boolean;
+    declined?: boolean;
+    merchantName?: string | null;
+    merchantMcc?: string | null;
+    providerCreatedAt?: Date;
+  }): Promise<CardAuthorizationOutcome> {
+    return this.db.$transaction(async (tx) => {
+      const existing = await tx.cardAuthorization.findUnique({
+        where: {
+          providerAuthorizationId: input.providerAuthorizationId,
+        },
+      });
+
+      if (existing) {
+        return {
+          recorded: true,
+          approved: existing.status === "APPROVED",
+          authorizationId: existing.id,
+          holdId: null,
+          replayed: true,
+        };
+      }
+
+      const business = await tx.business.findUnique({
+        where: { id: input.businessId },
+        select: { status: true, currency: true },
+      });
+
+      if (!business) {
+        return {
+          recorded: false,
+          approved: false,
+          authorizationId: null,
+          holdId: null,
+          replayed: false,
+          reason: "business-missing",
+        };
+      }
+
+      let account = await tx.account.findUnique({
+        where: {
+          businessId_currency: {
+            businessId: input.businessId,
+            currency: business.currency,
+          },
+        },
+      });
+
+      if (!account && business.status === BUSINESS_STATUS.ACTIVE) {
+        account = (await this.account(tx, input.businessId)).account;
+      }
+
+      if (!account) {
+        return {
+          recorded: false,
+          approved: false,
+          authorizationId: null,
+          holdId: null,
+          replayed: false,
+          reason: "account-missing",
+        };
+      }
+
+      const funds = await this.balance(tx, account.id);
+      const approved =
+        !input.declined &&
+        business.status === BUSINESS_STATUS.ACTIVE &&
+        account.status === "ACTIVE" &&
+        input.cardActive &&
+        input.amountMinor > 0n &&
+        input.amountMinor <= funds.availableMinor;
+
+      const authorization = await tx.cardAuthorization.create({
+        data: {
+          businessId: input.businessId,
+          accountId: account.id,
+          cardId: input.cardId,
+          providerAuthorizationId: input.providerAuthorizationId,
+          amountMinor: input.amountMinor,
+          currency: business.currency,
+          status: approved ? "APPROVED" : "DECLINED",
+          merchantName: input.merchantName ?? null,
+          merchantMcc: input.merchantMcc ?? null,
+          providerCreatedAt: input.providerCreatedAt ?? new Date(),
+        },
+      });
+
+      let holdId: string | null = null;
+
+      if (approved) {
+        const hold = await tx.hold.create({
+          data: {
+            businessId: input.businessId,
+            accountId: account.id,
+            amountMinor: input.amountMinor,
+            currency: business.currency,
+            status: "ACTIVE",
+            source: "CARD_AUTHORIZATION",
+            sourceId: input.providerAuthorizationId,
+            idempotencyKey: `lithic-auth:${input.providerAuthorizationId}`,
+            expiresAt: new Date(Date.now() + 7 * 86_400_000),
+          },
+        });
+
+        holdId = hold.id;
+      }
+
+      await tx.auditLog.create({
+        data: auditEntry({
+          businessId: input.businessId,
+          actorType: "SYSTEM",
+          actorId: null,
+          action: approved
+            ? "CARD_AUTHORIZATION_APPROVED"
+            : "CARD_AUTHORIZATION_DECLINED",
+          resourceType: "CardAuthorization",
+          resourceId: authorization.id,
+          metadata: { cardId: input.cardId },
+        }),
+      });
+
+      return {
+        recorded: true,
+        approved,
+        authorizationId: authorization.id,
+        holdId,
+        replayed: false,
+      };
+    });
+  }
+
+  async captureCard(input: {
+    businessId: string;
+    cardId: string;
+    providerAuthorizationId: string;
+    providerTransactionId: string;
+    amountMinor: bigint;
+    occurredAt?: Date;
+  }): Promise<CardCaptureOutcome> {
+    return this.db.$transaction(async (tx) => {
+      const authorization = await tx.cardAuthorization.findUnique({
+        where: {
+          providerAuthorizationId: input.providerAuthorizationId,
+        },
+      });
+
+      if (!authorization) {
+        return {
+          applied: false,
+          replayed: false,
+          reason: "authorization-missing",
+        };
+      }
+
+      const existing = await tx.cardTransaction.findUnique({
+        where: { providerTransactionId: input.providerTransactionId },
+      });
+
+      if (existing) {
+        return {
+          applied: true,
+          replayed: true,
+          capturedMinor: authorization.capturedMinor,
+        };
+      }
+
+      if (
+        authorization.status === "DECLINED" ||
+        authorization.status === "REVERSED" ||
+        authorization.status === "CAPTURED"
+      ) {
+        return {
+          applied: false,
+          replayed: false,
+          reason: "authorization-not-capturable",
+        };
+      }
+
+      /*
+       * A clearing is the actual merchant settlement, which may differ from the
+       * authorization in either direction. Capping it at the authorized amount
+       * would understate the ledger and leave the provider and NeoBank
+       * disagreeing. Post the real amount; the hold only reserves what it
+       * reserved, and the excess is an authorised overdraft visible in the
+       * available balance.
+       */
+      const capture = input.amountMinor;
+
+      if (capture <= 0n) {
+        return {
+          applied: false,
+          replayed: false,
+          reason: "nothing-to-capture",
+        };
+      }
+
+      const remaining = authorization.amountMinor - authorization.capturedMinor;
+      const overCaptured = capture > remaining ? capture - remaining : 0n;
+
+      const account = await tx.account.findUniqueOrThrow({
+        where: { id: authorization.accountId },
+        select: { currency: true },
+      });
+
+      const posted = await this.post(tx, {
+        businessId: input.businessId,
+        accountId: authorization.accountId,
+        currency: account.currency,
+        kind: "CARD_CAPTURE",
+        amountMinor: capture,
+        description: `Lithic card purchase${
+          authorization.merchantName ? ` · ${authorization.merchantName}` : ""
+        }`,
+        idempotencyKey: `lithic-capture:${input.providerTransactionId}`,
+        requestHash: hashRequest({
+          token: input.providerTransactionId,
+          amountMinor: capture.toString(),
+        }),
+        sourceType: "LITHIC_CARD_TRANSACTION",
+        sourceId: input.providerTransactionId,
+        occurredAt: input.occurredAt,
+        lines: [
+          { code: "2010", direction: "DEBIT", amountMinor: capture },
+          { code: "1010", direction: "CREDIT", amountMinor: capture },
+        ],
+      });
+
+      await tx.cardTransaction.create({
+        data: {
+          businessId: input.businessId,
+          accountId: authorization.accountId,
+          cardId: input.cardId,
+          authorizationId: authorization.id,
+          providerTransactionId: input.providerTransactionId,
+          kind: "CAPTURE",
+          amountMinor: capture,
+          currency: account.currency,
+          occurredAt: input.occurredAt ?? new Date(),
+        },
+      });
+
+      const nextCaptured = authorization.capturedMinor + capture;
+
+      /*
+       * A clearing is final: the merchant settled for `capture`, and any
+       * authorised amount above it is released immediately. Keeping the hold
+       * ACTIVE would reserve money that can never be captured again.
+       */
+      await tx.cardAuthorization.update({
+        where: { id: authorization.id },
+        data: {
+          capturedMinor: nextCaptured,
+          status: "CAPTURED",
+        },
+      });
+
+      const hold = await tx.hold.findUnique({
+        where: {
+          source_sourceId: {
+            source: "CARD_AUTHORIZATION",
+            sourceId: input.providerAuthorizationId,
+          },
+        },
+      });
+
+      if (hold) {
+        await tx.hold.update({
+          where: { id: hold.id },
+          data: {
+            /*
+             * The hold's check constraint caps `capturedMinor` at the
+             * authorized amount. The ledger carries the true settlement; the
+             * hold is only a reservation and has done its job once released.
+             */
+            capturedMinor:
+              nextCaptured > hold.amountMinor ? hold.amountMinor : nextCaptured,
+            status: "CAPTURED",
+            capturedAt: new Date(),
+            releasedAt: new Date(),
+          },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: auditEntry({
+          businessId: input.businessId,
+          actorType: "SYSTEM",
+          actorId: null,
+          action: "CARD_CAPTURED",
+          resourceType: "LedgerTransaction",
+          resourceId: (posted.transaction as { id: string }).id,
+          metadata: {
+            cardId: input.cardId,
+            authorizationId: authorization.id,
+            ...(overCaptured > 0n
+              ? { overCapturedMinor: jsonMoney(overCaptured) }
+              : {}),
+          },
+        }),
+      });
+
+      return {
+        applied: true,
+        replayed: posted.replayed,
+        capturedMinor: nextCaptured,
+      };
+    });
+  }
+
+  async voidCardAuthorization(input: {
+    businessId: string;
+    cardId: string;
+    providerAuthorizationId: string;
+    providerTransactionId: string;
+    occurredAt?: Date;
+  }): Promise<CardCaptureOutcome> {
+    return this.db.$transaction(async (tx) => {
+      const authorization = await tx.cardAuthorization.findUnique({
+        where: {
+          providerAuthorizationId: input.providerAuthorizationId,
+        },
+      });
+
+      if (!authorization) {
+        return {
+          applied: false,
+          replayed: false,
+          reason: "authorization-missing",
+        };
+      }
+
+      const existing = await tx.cardTransaction.findUnique({
+        where: { providerTransactionId: input.providerTransactionId },
+      });
+
+      if (existing) {
+        return {
+          applied: true,
+          replayed: true,
+          capturedMinor: authorization.capturedMinor,
+        };
+      }
+
+      const remaining = authorization.amountMinor - authorization.capturedMinor;
+
+      await tx.cardTransaction.create({
+        data: {
+          businessId: input.businessId,
+          accountId: authorization.accountId,
+          cardId: input.cardId,
+          authorizationId: authorization.id,
+          providerTransactionId: input.providerTransactionId,
+          kind: "VOID",
+          amountMinor: remaining > 0n ? remaining : 0n,
+          currency: authorization.currency,
+          occurredAt: input.occurredAt ?? new Date(),
+        },
+      });
+
+      await tx.hold.updateMany({
+        where: {
+          source: "CARD_AUTHORIZATION",
+          sourceId: input.providerAuthorizationId,
+          status: "ACTIVE",
+        },
+        data: { status: "RELEASED", releasedAt: new Date() },
+      });
+
+      await tx.cardAuthorization.update({
+        where: { id: authorization.id },
+        data: {
+          status:
+            authorization.capturedMinor > 0n
+              ? "PARTIALLY_CAPTURED"
+              : "REVERSED",
+        },
+      });
+
+      await tx.auditLog.create({
+        data: auditEntry({
+          businessId: input.businessId,
+          actorType: "SYSTEM",
+          actorId: null,
+          action: "CARD_AUTHORIZATION_VOIDED",
+          resourceType: "CardAuthorization",
+          resourceId: authorization.id,
+          metadata: { cardId: input.cardId },
+        }),
+      });
+
+      return {
+        applied: true,
+        replayed: false,
+        capturedMinor: authorization.capturedMinor,
+      };
+    });
+  }
+
+  async reverseCardCapture(input: {
+    businessId: string;
+    cardId: string;
+    providerAuthorizationId: string;
+    providerTransactionId: string;
+    occurredAt?: Date;
+  }): Promise<CardCaptureOutcome> {
+    return this.db.$transaction(async (tx) => {
+      const authorization = await tx.cardAuthorization.findUnique({
+        where: {
+          providerAuthorizationId: input.providerAuthorizationId,
+        },
+      });
+
+      if (!authorization) {
+        return {
+          applied: false,
+          replayed: false,
+          reason: "authorization-missing",
+        };
+      }
+
+      const capture = await tx.cardTransaction.findFirst({
+        where: { authorizationId: authorization.id, kind: "CAPTURE" },
+        orderBy: { occurredAt: "desc" },
+      });
+
+      if (!capture) {
+        return { applied: false, replayed: false, reason: "capture-missing" };
+      }
+
+      const reversalToken = `${capture.providerTransactionId}:reversal`;
+      const existing = await tx.cardTransaction.findUnique({
+        where: { providerTransactionId: reversalToken },
+      });
+
+      if (existing) {
+        return {
+          applied: true,
+          replayed: true,
+          capturedMinor: authorization.capturedMinor,
+        };
+      }
+
+      const original = await tx.ledgerTransaction.findFirst({
+        where: {
+          businessId: input.businessId,
+          sourceType: "LITHIC_CARD_TRANSACTION",
+          sourceId: capture.providerTransactionId,
+        },
+        include: { entries: { include: { ledgerAccount: true } } },
+      });
+
+      if (!original) {
+        return { applied: false, replayed: false, reason: "ledger-missing" };
+      }
+
+      const posted = await this.post(tx, {
+        businessId: input.businessId,
+        accountId: authorization.accountId,
+        currency: authorization.currency,
+        kind: "REVERSAL",
+        amountMinor: original.amountMinor,
+        description: `Reversal · Lithic card purchase${
+          authorization.merchantName ? ` · ${authorization.merchantName}` : ""
+        }`,
+        idempotencyKey: `lithic-reversal:${capture.providerTransactionId}`,
+        requestHash: hashRequest({
+          token: capture.providerTransactionId,
+          kind: "REVERSAL",
+        }),
+        sourceType: "LITHIC_CARD_REVERSAL",
+        sourceId: capture.providerTransactionId,
+        occurredAt: input.occurredAt,
+        reversesTransactionId: original.id,
+        lines: original.entries.map((entry) => ({
+          code: (entry.ledgerAccount.code === "1010" ? "1010" : "2010") as
+            | "1010"
+            | "2010",
+          direction: entry.direction === "DEBIT" ? "CREDIT" : "DEBIT",
+          amountMinor: entry.amountMinor,
+        })),
+      });
+
+      await tx.ledgerTransaction.update({
+        where: { id: original.id },
+        data: { status: "REVERSED" },
+      });
+
+      await tx.cardTransaction.create({
+        data: {
+          businessId: input.businessId,
+          accountId: authorization.accountId,
+          cardId: input.cardId,
+          authorizationId: authorization.id,
+          providerTransactionId: reversalToken,
+          kind: "REVERSAL",
+          amountMinor: capture.amountMinor,
+          currency: authorization.currency,
+          occurredAt: input.occurredAt ?? new Date(),
+        },
+      });
+
+      const nextCaptured =
+        authorization.capturedMinor > capture.amountMinor
+          ? authorization.capturedMinor - capture.amountMinor
+          : 0n;
+
+      await tx.cardAuthorization.update({
+        where: { id: authorization.id },
+        data: {
+          capturedMinor: nextCaptured,
+          status: nextCaptured === 0n ? "REVERSED" : "PARTIALLY_CAPTURED",
+        },
+      });
+
+      await tx.auditLog.create({
+        data: auditEntry({
+          businessId: input.businessId,
+          actorType: "SYSTEM",
+          actorId: null,
+          action: "CARD_CAPTURE_REVERSED",
+          resourceType: "LedgerTransaction",
+          resourceId: original.id,
+          metadata: {
+            cardId: input.cardId,
+            authorizationId: authorization.id,
+          },
+        }),
+      });
+
+      return {
+        applied: true,
+        replayed: posted.replayed,
+        capturedMinor: nextCaptured,
+      };
+    });
+  }
+
+  async refundCard(input: {
+    businessId: string;
+    cardId: string;
+    providerAuthorizationId: string;
+    providerTransactionId: string;
+    amountMinor: bigint;
+    occurredAt?: Date;
+  }): Promise<CardCaptureOutcome> {
+    return this.db.$transaction(async (tx) => {
+      const existing = await tx.cardTransaction.findUnique({
+        where: { providerTransactionId: input.providerTransactionId },
+      });
+
+      if (existing) {
+        return { applied: true, replayed: true };
+      }
+
+      const authorization = await tx.cardAuthorization.findUnique({
+        where: {
+          providerAuthorizationId: input.providerAuthorizationId,
+        },
+      });
+
+      if (!authorization) {
+        return {
+          applied: false,
+          replayed: false,
+          reason: "authorization-missing",
+        };
+      }
+
+      const posted = await this.post(tx, {
+        businessId: input.businessId,
+        accountId: authorization.accountId,
+        currency: authorization.currency,
+        kind: "CARD_REFUND",
+        amountMinor: input.amountMinor,
+        description: `Lithic card refund${
+          authorization.merchantName ? ` · ${authorization.merchantName}` : ""
+        }`,
+        idempotencyKey: `lithic-refund:${input.providerTransactionId}`,
+        requestHash: hashRequest({
+          token: input.providerTransactionId,
+          kind: "CARD_REFUND",
+        }),
+        sourceType: "LITHIC_CARD_REFUND",
+        sourceId: input.providerTransactionId,
+        occurredAt: input.occurredAt,
+        lines: [
+          { code: "2010", direction: "CREDIT", amountMinor: input.amountMinor },
+          { code: "1010", direction: "DEBIT", amountMinor: input.amountMinor },
+        ],
+      });
+
+      await tx.cardTransaction.create({
+        data: {
+          businessId: input.businessId,
+          accountId: authorization.accountId,
+          cardId: input.cardId,
+          authorizationId: authorization.id,
+          providerTransactionId: input.providerTransactionId,
+          kind: "REFUND",
+          amountMinor: input.amountMinor,
+          currency: authorization.currency,
+          occurredAt: input.occurredAt ?? new Date(),
+        },
+      });
+
+      await tx.auditLog.create({
+        data: auditEntry({
+          businessId: input.businessId,
+          actorType: "SYSTEM",
+          actorId: null,
+          action: "CARD_REFUNDED",
+          resourceType: "LedgerTransaction",
+          resourceId: (posted.transaction as { id: string }).id,
+          metadata: {
+            cardId: input.cardId,
+            authorizationId: authorization.id,
+          },
+        }),
+      });
+
+      return { applied: true, replayed: posted.replayed };
     });
   }
 
@@ -647,7 +1320,7 @@ export default class LedgerService {
     id: string,
     key: string,
   ) {
-    ensureOperator(role);
+    ensureOperations(role);
     if (!/^[A-Za-z0-9:_-]{8,64}$/.test(key))
       throw new ApiError(LEDGER_ERRORS.IDEMPOTENCY_KEY_REQUIRED, 400);
     return this.db.$transaction(async (tx) => {
