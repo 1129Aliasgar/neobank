@@ -190,6 +190,21 @@ cd backend && npm run typecheck && npm run build
 cd frontend && npx tsc --noEmit && npm run lint && npm run build
 ```
 
+### Smoke test
+
+With the API running and the demo seed loaded:
+
+```bash
+cd backend
+npm run smoke                 # 29 read-only checks: roles, tenancy, gating, integrity
+SMOKE_CARD_FLOW=1 npm run smoke   # + 12 card checks; moves $1.00 in the sandbox
+```
+
+PowerShell: `$env:SMOKE_CARD_FLOW='1'; npm run smoke`.
+
+The script prints `PASS`/`FAIL` per assertion and exits non-zero on a failure.
+It never prints a token or a provider secret.
+
 ## Decisions
 
 `decision-log.md` records the choices that shaped the build, two to four lines
