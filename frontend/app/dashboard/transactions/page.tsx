@@ -6,5 +6,92 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { Refusal } from "@/components/dashboard/refusal";
 import { accountApi, type Transaction } from "@/lib/account";
 import { formatMinor } from "@/lib/money";
-export default function TransactionsPage() { return <OnboardingGate allow={["DONE"]}>{(current) => current.role === "EMPLOYEE" || current.role === "OPERATIONS" ? <Refusal role={current.role} /> : <DashboardShell current={current}><TransactionsContent /></DashboardShell>}</OnboardingGate>; }
-function TransactionsContent() { const [rows, setRows] = useState<Transaction[]>([]); const [error, setError] = useState<string | null>(null); useEffect(() => { void accountApi.transactions().then((result) => setRows(result.transactions)).catch((e) => setError(e instanceof Error ? e.message : "Could not load transactions.")); }, []); return <div className="animate-rise"><p className="eyebrow">Business account / movement</p><h1 className="mt-4 font-heading text-[clamp(2.2rem,5vw,3.8rem)] font-light tracking-[-0.035em] text-ink">Transactions</h1>{error ? <p role="alert" className="mt-6 text-[13px] text-vermilion">{error}</p> : <div className="mt-8 overflow-x-auto border-y border-rule"><table className="w-full min-w-[38rem] text-left text-[12px]"><thead className="border-b border-rule font-mono text-[9px] uppercase tracking-[0.16em] text-ink-muted"><tr><th className="px-3 py-3">Date</th><th className="px-3 py-3">Description</th><th className="px-3 py-3">Kind</th><th className="px-3 py-3 text-right">Amount</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="border-b border-rule/70 last:border-0"><td className="px-3 py-4 text-ink-muted">{new Date(row.postedAt).toLocaleDateString()}</td><td className="px-3 py-4"><Link className="text-ink hover:text-teal" href={`/dashboard/transactions/${row.id}`}>{row.description}</Link></td><td className="px-3 py-4 font-mono text-[10px] uppercase text-ink-muted">{row.kind}</td><td className={`px-3 py-4 text-right tabular-nums ${row.kind === "DEPOSIT" ? "text-teal" : "text-ink"}`}>{row.kind === "DEPOSIT" ? "+" : "−"}{formatMinor(row.amountMinor, row.currency)}</td></tr>)}</tbody></table>{!rows.length && !error ? <p className="px-3 py-10 text-[13px] text-ink-muted">No movement yet. Add sandbox funds to see the first entry.</p> : null}</div>}</div>; }
+export default function TransactionsPage() {
+  return (
+    <OnboardingGate allow={["DONE"]}>
+      {(current) =>
+        current.role === "EMPLOYEE" || current.role === "OPERATIONS" ? (
+          <Refusal role={current.role} />
+        ) : (
+          <DashboardShell current={current}>
+            <TransactionsContent />
+          </DashboardShell>
+        )
+      }
+    </OnboardingGate>
+  );
+}
+function TransactionsContent() {
+  const [rows, setRows] = useState<Transaction[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void accountApi
+      .transactions()
+      .then((result) => setRows(result.transactions))
+      .catch((e) =>
+        setError(
+          e instanceof Error ? e.message : "Could not load transactions.",
+        ),
+      );
+  }, []);
+  return (
+    <div className="animate-rise">
+      <p className="eyebrow">Business account / movement</p>
+      <h1 className="mt-4 font-heading text-[clamp(2.2rem,5vw,3.8rem)] font-light tracking-[-0.035em] text-ink">
+        Transactions
+      </h1>
+      {error ? (
+        <p role="alert" className="mt-6 text-[13px] text-vermilion">
+          {error}
+        </p>
+      ) : (
+        <div className="mt-8 overflow-x-auto border-y border-rule">
+          <table className="w-full min-w-[38rem] text-left text-[12px]">
+            <thead className="border-b border-rule font-mono text-[9px] uppercase tracking-[0.16em] text-ink-muted">
+              <tr>
+                <th className="px-3 py-3">Date</th>
+                <th className="px-3 py-3">Description</th>
+                <th className="px-3 py-3">Kind</th>
+                <th className="px-3 py-3 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr
+                  key={row.id}
+                  className="border-b border-rule/70 last:border-0"
+                >
+                  <td className="px-3 py-4 text-ink-muted">
+                    {new Date(row.postedAt).toLocaleDateString()}
+                  </td>
+                  <td className="px-3 py-4">
+                    <Link
+                      className="text-ink hover:text-teal"
+                      href={`/dashboard/transactions/${row.id}`}
+                    >
+                      {row.description}
+                    </Link>
+                  </td>
+                  <td className="px-3 py-4 font-mono text-[10px] uppercase text-ink-muted">
+                    {row.kind}
+                  </td>
+                  <td
+                    className={`px-3 py-4 text-right tabular-nums ${row.kind === "DEPOSIT" ? "text-teal" : "text-ink"}`}
+                  >
+                    {row.kind === "DEPOSIT" ? "+" : "−"}
+                    {formatMinor(row.amountMinor, row.currency)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!rows.length && !error ? (
+            <p className="px-3 py-10 text-[13px] text-ink-muted">
+              No movement yet. Add sandbox funds to see the first entry.
+            </p>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
