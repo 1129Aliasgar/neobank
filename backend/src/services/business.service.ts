@@ -117,8 +117,7 @@ export default class BusinessService {
 
     if (business.status === BUSINESS_STATUS.ACTIVE) {
       const locked = IDENTITY_FIELDS.filter(
-        (field) =>
-          data[field] !== undefined && data[field] !== business[field],
+        (field) => data[field] !== undefined && data[field] !== business[field],
       );
 
       if (locked.length > 0) {

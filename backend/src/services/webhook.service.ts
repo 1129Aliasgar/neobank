@@ -46,7 +46,10 @@ export type WebhookOutcome = "processed" | "duplicate" | "ignored";
  * The only two event families that describe a verification session. Everything
  * else is stored for the audit trail and then left alone.
  */
-const SESSION_WEBHOOK_TYPES = new Set<string>(["status.updated", "data.updated"]);
+const SESSION_WEBHOOK_TYPES = new Set<string>([
+  "status.updated",
+  "data.updated",
+]);
 
 @injectable()
 export default class WebhookService {
@@ -249,7 +252,11 @@ export default class WebhookService {
     try {
       const parsed: unknown = JSON.parse(rawBody.toString("utf8"));
 
-      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      if (
+        parsed === null ||
+        typeof parsed !== "object" ||
+        Array.isArray(parsed)
+      ) {
         throw new Error("not an object");
       }
 
@@ -274,7 +281,9 @@ export default class WebhookService {
       return null;
     }
 
-    const business = await this.businessRepository.findById(payload.vendor_data);
+    const business = await this.businessRepository.findById(
+      payload.vendor_data,
+    );
 
     return business?.id ?? null;
   }

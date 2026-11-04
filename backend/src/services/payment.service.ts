@@ -30,11 +30,7 @@ import {
 import { PAYMENT_ERRORS } from "../constants/error.js";
 import ApiError from "../utils/apiError.js";
 import { auditEntry } from "../utils/audit.js";
-import {
-  decodeCursor,
-  encodeCursor,
-  jsonMoney,
-} from "../utils/money.js";
+import { decodeCursor, encodeCursor, jsonMoney } from "../utils/money.js";
 import { isUniqueConstraintViolation } from "../utils/prismaError.js";
 import LedgerService from "./ledger.service.js";
 
@@ -220,7 +216,10 @@ export default class PaymentService {
     if (beneficiaryName.length === 0 || beneficiaryName.length > 120)
       throw new ApiError(PAYMENT_ERRORS.BENEFICIARY_INVALID, 422);
 
-    if (clientRequestId !== undefined && !IDEMPOTENCY_PATTERN.test(clientRequestId))
+    if (
+      clientRequestId !== undefined &&
+      !IDEMPOTENCY_PATTERN.test(clientRequestId)
+    )
       throw new ApiError(PAYMENT_ERRORS.IDEMPOTENCY_INVALID, 400);
 
     const idempotencyKey = `payment-request:${businessId}:${actorUserId}:${
@@ -266,8 +265,7 @@ export default class PaymentService {
           };
         }
 
-        const requiresApproval =
-          amountMinor >= business.approvalThresholdMinor;
+        const requiresApproval = amountMinor >= business.approvalThresholdMinor;
 
         const created = await tx.paymentRequest.create({
           data: {
@@ -419,9 +417,7 @@ export default class PaymentService {
               AND: [
                 { createdAt: { lt: cursor.postedAt } },
                 {
-                  OR: [
-                    { createdAt: cursor.postedAt, id: { lt: cursor.id } },
-                  ],
+                  OR: [{ createdAt: cursor.postedAt, id: { lt: cursor.id } }],
                 },
               ],
             }
@@ -450,7 +446,8 @@ export default class PaymentService {
 
     return {
       requests: page.map((row) => this.summary(row)),
-      nextCursor: hasMore && last ? encodeCursor(last.createdAt, last.id) : null,
+      nextCursor:
+        hasMore && last ? encodeCursor(last.createdAt, last.id) : null,
     };
   }
 
@@ -469,10 +466,7 @@ export default class PaymentService {
     if (!row) throw new ApiError(PAYMENT_ERRORS.NOT_FOUND, 404);
 
     /* An employee must not learn that another employee's request exists. */
-    if (
-      role === USER_ROLE.EMPLOYEE &&
-      row.createdByUserId !== actorUserId
-    )
+    if (role === USER_ROLE.EMPLOYEE && row.createdByUserId !== actorUserId)
       throw new ApiError(PAYMENT_ERRORS.NOT_FOUND, 404);
 
     return { request: this.view(row, { userId: actorUserId, role }) };
@@ -632,10 +626,7 @@ export default class PaymentService {
       throw new ApiError(PAYMENT_ERRORS.AGENT_FORBIDDEN, 403);
     const note = reason.trim();
     if (note.length < 3 || note.length > 280)
-      throw new ApiError(
-        "A rejection reason must be 3-280 characters",
-        422,
-      );
+      throw new ApiError("A rejection reason must be 3-280 characters", 422);
 
     try {
       const result = await this.db.$transaction(async (tx) => {
@@ -767,8 +758,7 @@ export default class PaymentService {
       WHERE id = ${id} AND "businessId" = ${businessId}
       FOR UPDATE
     `;
-    if (rows.length === 0)
-      throw new ApiError(PAYMENT_ERRORS.NOT_FOUND, 404);
+    if (rows.length === 0) throw new ApiError(PAYMENT_ERRORS.NOT_FOUND, 404);
   }
 
   /**

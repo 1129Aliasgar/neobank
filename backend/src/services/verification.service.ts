@@ -36,10 +36,7 @@ import {
   type VerificationEnvironment,
   type VerificationStatus,
 } from "../constants/constants.js";
-import {
-  BUSINESS_ERRORS,
-  VERIFICATION_ERRORS,
-} from "../constants/error.js";
+import { BUSINESS_ERRORS, VERIFICATION_ERRORS } from "../constants/error.js";
 import ApiError from "../utils/apiError.js";
 import {
   ProviderError,
@@ -87,11 +84,7 @@ export interface ApplyDecisionInput {
 
 export interface ApplyDecisionResult {
   applied: boolean;
-  reason:
-    | "duplicate"
-    | "terminal-conflict"
-    | "stale-provider"
-    | null;
+  reason: "duplicate" | "terminal-conflict" | "stale-provider" | null;
   verification: VerificationRecord;
 }
 
@@ -147,10 +140,7 @@ export default class VerificationService {
       business.status === BUSINESS_STATUS.SUSPENDED ||
       business.status === BUSINESS_STATUS.CLOSED
     ) {
-      throw new ApiError(
-        BUSINESS_ERRORS.NOT_EDITABLE,
-        STATUS_CODE.CONFLICT,
-      );
+      throw new ApiError(BUSINESS_ERRORS.NOT_EDITABLE, STATUS_CODE.CONFLICT);
     }
 
     const profile = toBusinessProfile(business);
@@ -162,15 +152,11 @@ export default class VerificationService {
       );
     }
 
-    const active = await this.verificationRepository.findActiveByBusiness(
-      businessId,
-    );
+    const active =
+      await this.verificationRepository.findActiveByBusiness(businessId);
 
     if (active?.status === VERIFICATION_STATUS.REVIEW) {
-      throw new ApiError(
-        VERIFICATION_ERRORS.IN_REVIEW,
-        STATUS_CODE.CONFLICT,
-      );
+      throw new ApiError(VERIFICATION_ERRORS.IN_REVIEW, STATUS_CODE.CONFLICT);
     }
 
     const attemptNumber =
@@ -209,10 +195,9 @@ export default class VerificationService {
      * would violate the unique index and turn a provider quirk into a 500.
      */
     if (session.sessionId && session.sessionId !== active?.providerSessionId) {
-      const owner =
-        await this.verificationRepository.findByProviderSessionId(
-          session.sessionId,
-        );
+      const owner = await this.verificationRepository.findByProviderSessionId(
+        session.sessionId,
+      );
 
       if (owner && owner.id !== active?.id) {
         this.logger.error(
@@ -264,10 +249,7 @@ export default class VerificationService {
      * A retry reopens a rejected business. The attempt row is created first so
      * the audit trail names a real id, so the status move is a second write.
      */
-    if (
-      !active &&
-      business.status === BUSINESS_STATUS.REJECTED
-    ) {
+    if (!active && business.status === BUSINESS_STATUS.REJECTED) {
       await this.businessRepository.setStatus(
         businessId,
         BUSINESS_STATUS.PENDING_VERIFICATION,
@@ -307,9 +289,8 @@ export default class VerificationService {
     businessId: string,
     options: { sync?: boolean } = {},
   ): Promise<VerificationSummary | null> {
-    const record = await this.verificationRepository.findLatestByBusiness(
-      businessId,
-    );
+    const record =
+      await this.verificationRepository.findLatestByBusiness(businessId);
 
     if (!record) {
       return null;
@@ -376,15 +357,11 @@ export default class VerificationService {
       );
     }
 
-    const active = await this.verificationRepository.findActiveByBusiness(
-      businessId,
-    );
+    const active =
+      await this.verificationRepository.findActiveByBusiness(businessId);
 
     if (!active || !active.providerSessionId) {
-      throw new ApiError(
-        VERIFICATION_ERRORS.NOT_ACTIVE,
-        STATUS_CODE.CONFLICT,
-      );
+      throw new ApiError(VERIFICATION_ERRORS.NOT_ACTIVE, STATUS_CODE.CONFLICT);
     }
 
     const decision = simulator.simulate(active.providerSessionId, scenario);
@@ -405,9 +382,7 @@ export default class VerificationService {
    * Shared by the webhook, the polling fallback and the simulator so the three
    * cannot disagree about what "Declined" or "Abandoned" means.
    */
-  async applyDecision(
-    input: ApplyDecisionInput,
-  ): Promise<ApplyDecisionResult> {
+  async applyDecision(input: ApplyDecisionInput): Promise<ApplyDecisionResult> {
     const { verification } = input;
     let decision = input.decision;
 
@@ -548,4 +523,3 @@ export default class VerificationService {
     return Date.now() - record.lastSyncedAt.getTime() > SYNC_STALE_MS;
   }
 }
-

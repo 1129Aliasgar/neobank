@@ -1113,8 +1113,7 @@ export default class LedgerService {
         reversesTransactionId: original.id,
         lines: original.entries.map((entry) => ({
           code: (entry.ledgerAccount.code === "1010" ? "1010" : "2010") as
-            | "1010"
-            | "2010",
+            "1010" | "2010",
           direction: entry.direction === "DEBIT" ? "CREDIT" : "DEBIT",
           amountMinor: entry.amountMinor,
         })),

@@ -89,7 +89,11 @@ function parseDate(value: unknown): Date | undefined {
 
 function amountFrom(...candidates: unknown[]): bigint {
   for (const candidate of candidates) {
-    if (typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0) {
+    if (
+      typeof candidate === "number" &&
+      Number.isFinite(candidate) &&
+      candidate > 0
+    ) {
       return BigInt(Math.trunc(candidate));
     }
 
@@ -184,10 +188,7 @@ function sanitiseLithicData(value: unknown): Record<string, unknown> {
     "last_four",
     "created",
   ]) {
-    if (
-      typeof source[key] === "string" ||
-      typeof source[key] === "number"
-    ) {
+    if (typeof source[key] === "string" || typeof source[key] === "number") {
       clean[key] = source[key];
     }
   }
@@ -358,9 +359,7 @@ export default class CardService {
 
     return {
       cards: cards.map((row) => this.view(row)),
-      authorizations: authorizations.map((row) =>
-        this.viewAuthorization(row),
-      ),
+      authorizations: authorizations.map((row) => this.viewAuthorization(row)),
     };
   }
 
@@ -383,12 +382,7 @@ export default class CardService {
     };
   }
 
-  async get(
-    businessId: string,
-    userId: string,
-    role: UserRole,
-    id: string,
-  ) {
+  async get(businessId: string, userId: string, role: UserRole, id: string) {
     await this.business(businessId);
     this.ensureRole(role);
 
@@ -568,11 +562,7 @@ export default class CardService {
       throw new ApiError(CARD_ERRORS.INVALID_INTERVAL, 422);
     }
 
-    const holderResult = await this.createCardholder(
-      businessId,
-      role,
-      userId,
-    );
+    const holderResult = await this.createCardholder(businessId, role, userId);
     const holder = await this.db.cardholder.findUniqueOrThrow({
       where: { id: holderResult.cardholder.id },
     });
@@ -600,8 +590,7 @@ export default class CardService {
       provider = await this.lithic.createVirtualCard({
         accountToken: holder.providerAccountId,
         spendLimit: limit === undefined ? undefined : Number(limit),
-        spendLimitDuration:
-          limit === undefined ? undefined : interval,
+        spendLimitDuration: limit === undefined ? undefined : interval,
         memo: `NeoBank ${business.legalName}`.slice(0, 64),
       });
     } catch (error) {
@@ -629,11 +618,8 @@ export default class CardService {
         last4: provider.last_four?.slice(-4) ?? null,
         brand: null,
         expMonth:
-          provider.exp_month == null
-            ? null
-            : Number(provider.exp_month),
-        expYear:
-          provider.exp_year == null ? null : Number(provider.exp_year),
+          provider.exp_month == null ? null : Number(provider.exp_month),
+        expYear: provider.exp_year == null ? null : Number(provider.exp_year),
         spendingLimitMinor: limit ?? null,
         spendingLimitInterval: limit === undefined ? null : interval,
       },
@@ -720,7 +706,10 @@ export default class CardService {
       }),
     });
 
-    return { card: this.view(updated), providerState: provider.state ?? providerState };
+    return {
+      card: this.view(updated),
+      providerState: provider.state ?? providerState,
+    };
   }
 
   async authorizations(
@@ -736,9 +725,7 @@ export default class CardService {
       where: {
         businessId,
         cardId,
-        ...(isOperator(role)
-          ? {}
-          : { card: { cardholder: { userId } } }),
+        ...(isOperator(role) ? {} : { card: { cardholder: { userId } } }),
       },
       include: { transactions: true },
       orderBy: { createdAt: "desc" },
@@ -778,8 +765,7 @@ export default class CardService {
 
     if (
       !Number.isFinite(seconds) ||
-      Math.abs(Date.now() / 1000 - seconds) >
-        env.lithic.webhookToleranceSeconds
+      Math.abs(Date.now() / 1000 - seconds) > env.lithic.webhookToleranceSeconds
     ) {
       throw new ApiError(WEBHOOK_ERRORS.STALE_TIMESTAMP, 401);
     }
@@ -825,7 +811,11 @@ export default class CardService {
     try {
       const parsed: unknown = JSON.parse(raw.toString("utf8"));
 
-      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      if (
+        parsed === null ||
+        typeof parsed !== "object" ||
+        Array.isArray(parsed)
+      ) {
         throw new Error("not an object");
       }
 
@@ -844,8 +834,7 @@ export default class CardService {
     }
 
     const providerEventId = asString(envelope.token) || verified.id;
-    const providerCreatedAt =
-      parseDate(envelope.created) ?? verified.timestamp;
+    const providerCreatedAt = parseDate(envelope.created) ?? verified.timestamp;
 
     const cardToken =
       asString(data.card_token) ||
@@ -954,9 +943,7 @@ export default class CardService {
 
     return {
       merchantName:
-        asString(merchant.descriptor) ||
-        asString(data.merchant_name) ||
-        null,
+        asString(merchant.descriptor) || asString(data.merchant_name) || null,
       merchantMcc:
         asString(merchant.mcc) || asString(data.merchant_mcc) || null,
     };
@@ -1017,8 +1004,7 @@ export default class CardService {
     }
 
     const { merchantName, merchantMcc } = this.merchant(data);
-    const providerCreatedAt =
-      parseDate(data.created) ?? new Date();
+    const providerCreatedAt = parseDate(data.created) ?? new Date();
     const fallbackAmount = amountFrom(
       data.settled_amount,
       data.authorization_amount,
@@ -1157,26 +1143,30 @@ export default class CardService {
       const status = asString(data.status).toUpperCase();
 
       if (status === "VOIDED") {
-        return (await this.ledger.voidCardAuthorization({
-          businessId: card.businessId,
-          cardId: card.id,
-          providerAuthorizationId: authorizationToken,
-          providerTransactionId: `${authorizationToken}:void:status`,
-          occurredAt: providerCreatedAt,
-        })).applied
+        return (
+          await this.ledger.voidCardAuthorization({
+            businessId: card.businessId,
+            cardId: card.id,
+            providerAuthorizationId: authorizationToken,
+            providerTransactionId: `${authorizationToken}:void:status`,
+            occurredAt: providerCreatedAt,
+          })
+        ).applied
           ? "processed"
           : "parked";
       }
 
       if (status === "SETTLED" && fallbackAmount > 0n) {
-        return (await this.ledger.captureCard({
-          businessId: card.businessId,
-          cardId: card.id,
-          providerAuthorizationId: authorizationToken,
-          providerTransactionId: authorizationToken,
-          amountMinor: fallbackAmount,
-          occurredAt: providerCreatedAt,
-        })).applied
+        return (
+          await this.ledger.captureCard({
+            businessId: card.businessId,
+            cardId: card.id,
+            providerAuthorizationId: authorizationToken,
+            providerTransactionId: authorizationToken,
+            amountMinor: fallbackAmount,
+            occurredAt: providerCreatedAt,
+          })
+        ).applied
           ? "processed"
           : "parked";
       }

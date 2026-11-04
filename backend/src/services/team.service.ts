@@ -324,10 +324,7 @@ export default class TeamService {
          * end. Refuse at invite time instead of minting an unusable token.
          */
         if (existingMember?.status === MEMBERSHIP_STATUS.DISABLED)
-          throw new ApiError(
-            TEAM_ERRORS.MEMBER_DISABLED,
-            STATUS_CODE.CONFLICT,
-          );
+          throw new ApiError(TEAM_ERRORS.MEMBER_DISABLED, STATUS_CODE.CONFLICT);
 
         /*
          * A sign-in is scoped to one business. An existing active member of a
@@ -430,8 +427,7 @@ export default class TeamService {
       const existing = await tx.invitation.findFirst({
         where: { id: invitationId, businessId },
       });
-      if (!existing)
-        throw new ApiError(TEAM_ERRORS.INVITATION_INVALID, 404);
+      if (!existing) throw new ApiError(TEAM_ERRORS.INVITATION_INVALID, 404);
       await this.business(tx, businessId);
       if (
         existing.status === INVITATION_STATUS.ACCEPTED ||
@@ -499,8 +495,7 @@ export default class TeamService {
       const invitation = await tx.invitation.findFirst({
         where: { id: invitationId, businessId },
       });
-      if (!invitation)
-        throw new ApiError(TEAM_ERRORS.INVITATION_INVALID, 404);
+      if (!invitation) throw new ApiError(TEAM_ERRORS.INVITATION_INVALID, 404);
       if (invitation.status !== INVITATION_STATUS.PENDING)
         throw new ApiError(
           TEAM_ERRORS.INVITATION_NOT_PENDING,
@@ -894,12 +889,12 @@ export default class TeamService {
       if (member.userId === actorUserId)
         throw new ApiError(TEAM_ERRORS.SELF_ROLE_CHANGE, STATUS_CODE.FORBIDDEN);
       if (member.role === USER_ROLE.OWNER)
-        throw new ApiError(TEAM_ERRORS.OWNER_ROLE_LOCKED, STATUS_CODE.FORBIDDEN);
-      if (member.status !== MEMBERSHIP_STATUS.ACTIVE)
         throw new ApiError(
-          TEAM_ERRORS.MEMBER_NOT_ACTIVE,
-          STATUS_CODE.CONFLICT,
+          TEAM_ERRORS.OWNER_ROLE_LOCKED,
+          STATUS_CODE.FORBIDDEN,
         );
+      if (member.status !== MEMBERSHIP_STATUS.ACTIVE)
+        throw new ApiError(TEAM_ERRORS.MEMBER_NOT_ACTIVE, STATUS_CODE.CONFLICT);
 
       if (member.role === nextRole) return member;
 
@@ -950,9 +945,11 @@ export default class TeamService {
       if (member.userId === actorUserId)
         throw new ApiError(TEAM_ERRORS.SELF_DISABLE, STATUS_CODE.FORBIDDEN);
       if (member.role === USER_ROLE.OWNER)
-        throw new ApiError(TEAM_ERRORS.OWNER_ROLE_LOCKED, STATUS_CODE.FORBIDDEN);
-      if (member.status === MEMBERSHIP_STATUS.DISABLED)
-        return member;
+        throw new ApiError(
+          TEAM_ERRORS.OWNER_ROLE_LOCKED,
+          STATUS_CODE.FORBIDDEN,
+        );
+      if (member.status === MEMBERSHIP_STATUS.DISABLED) return member;
 
       const updated = await tx.businessMember.update({
         where: { id: member.id },
