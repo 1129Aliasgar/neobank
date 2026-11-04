@@ -1,0 +1,86 @@
+# Render blueprint for the NeoBank API.
+#
+# Create a Blueprint from this repository, then fill the `sync: false` values in
+# the Render dashboard. The service runs Prisma migrations on every boot, so a
+# fresh Neon database is ready on the first deploy.
+#
+# The frontend (Netlify) needs NEXT_PUBLIC_API_URL set to:
+#   https://<service-name>.onrender.com/api/v1
+
+services:
+  - type: web
+    name: neobank-api
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run db:migrate:deploy && npm start
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 1d
+      - key: LOG_LEVEL
+        value: info
+
+      # Neon pooled connection string (sslmode=require).
+      - key: DATABASE_URL
+        sync: false
+
+      # Public origins. Both must be the deployed web origin.
+      - key: CORS_ORIGIN
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      # Public base of this API, e.g. https://neobank-api.onrender.com
+      - key: PUBLIC_API_URL
+        sync: false
+
+      # Didit KYB (sandbox). Required when NODE_ENV=production.
+      - key: DIDIT_API_KEY
+        sync: false
+      - key: DIDIT_WORKFLOW_ID
+        sync: false
+      - key: DIDIT_WEBHOOK_SECRET
+        sync: false
+      - key: DIDIT_API_BASE_URL
+        value: https://verification.didit.me
+      - key: DIDIT_ENVIRONMENT
+        value: sandbox
+      - key: DIDIT_SANDBOX_SCENARIO
+        value: approve
+      - key: VERIFICATION_PROVIDER
+        value: auto
+
+      # Lithic Sandbox cards.
+      - key: LITHIC_API_KEY
+        sync: false
+      - key: LITHIC_BASE_URL
+        value: https://sandbox.lithic.com/v1
+      - key: LITHIC_ENVIRONMENT
+        value: sandbox
+      - key: LITHIC_ENABLED
+        value: "true"
+      - key: LITHIC_EVENT_SUBSCRIPTION_TOKEN
+        sync: false
+      - key: LITHIC_WEBHOOK_SECRET
+        sync: false
+      - key: LITHIC_WEBHOOK_TOLERANCE_SECONDS
+        value: "300"
+
+      # Sandbox funding. The ACK flag is mandatory in production.
+      - key: LEDGER_SANDBOX_TOOLS
+        value: "true"
+      - key: LEDGER_SANDBOX_TOOLS_ACK
+        value: labelled
+      - key: SANDBOX_FUNDING_DAILY_LIMIT_MINOR
+        value: "20000000"
+      - key: SANDBOX_DEPOSIT_MAX_MINOR
+        value: "5000000"
