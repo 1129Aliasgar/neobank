@@ -269,3 +269,23 @@ when a choice is made, not reconstructed at the end.
 
 - Free ngrok domains return an HTML warning for browser GETs, so the shared axios client sends ngrok-skip-browser-warning.
 - Harmless on a real host; without it login works but every dashboard read fails to parse.
+
+## 2026-11-04T12:10Z - Module 5 roles and invitations
+
+- Kept `OWNER`, `ADMIN`, `EMPLOYEE`, `OPERATIONS`; invitations may grant only `EMPLOYEE` or `ADMIN`, and only an `OWNER` changes roles or disables a member.
+- Invitation tokens are stored as SHA-256 hashes and shown once; a resend rotates the token, and a partial unique index keeps one live invite per business/email.
+- Token-gated registration creates an `ACTIVE` membership with no business of its own; accepting from an account that already belongs elsewhere returns `409`.
+- Disabled memberships are terminal for this module: re-inviting the address is refused because login requires an active membership.
+
+## 2026-11-04T12:20Z - Module 5 maker-checker
+
+- The default threshold is `0`, so every payment needs a second person; the owner can raise it, but the creator and non-approvers are always refused.
+- Approval posts one balanced `PAYMENT` transaction inside the same database transaction that checks available funds; rejection and cancellation post nothing.
+- Self-approval returns `403`, an agent/system actor cannot decide, and a terminal request cannot be approved again (`409`).
+- The payment rail is a labelled simulator; the UI and API never claim a real bank transfer.
+
+## 2026-11-04T12:30Z - Module 5 seed and smoke fixtures
+
+- Added a second `ACTIVE` tenant (`NeoBank Second Co`) so cross-tenant reads are proven with a live `404`, not an inactive-business `409`.
+- The demo tenant seeds one pending `$5,000` request and one rejected request; the approval threshold and ledger stay idempotent across re-seeds.
+- The smoke matrix uses `SMOKE_TEAM_FLOW=1` for the mutating invitation/maker-checker/threshold tests and restores the threshold afterwards.

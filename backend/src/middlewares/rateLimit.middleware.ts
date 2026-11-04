@@ -87,3 +87,17 @@ export const verificationLimiter = rateLimit({
     "Too many verification attempts. Please try again in a minute.",
   ),
 });
+
+/**
+ * 50 invitation writes / hour / business. The key is the tenant, not the IP:
+ * an office sharing one address must not throttle the whole team.
+ */
+export const teamLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 50,
+  ...headers,
+  keyGenerator: (req) => req.user?.businessId ?? "anonymous",
+  message: errorBody(
+    "Too many team changes from this business. Please try again later.",
+  ),
+});

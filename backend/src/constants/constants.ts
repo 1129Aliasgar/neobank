@@ -62,6 +62,43 @@ export const BUSINESS_ROLES: UserRole[] = [
 /** Roles allowed to approve another person's payment above the threshold. */
 export const APPROVER_ROLES: UserRole[] = [USER_ROLE.OWNER, USER_ROLE.ADMIN];
 
+/** Roles an invitation or a role change may grant. Ownership is never invited. */
+export const INVITABLE_ROLES: UserRole[] = [
+  USER_ROLE.EMPLOYEE,
+  USER_ROLE.ADMIN,
+];
+
+/**
+ * Documented ceiling for the approval threshold: $1,000,000,000.00.
+ * A larger value is a configuration mistake, not a policy choice.
+ */
+export const MAX_APPROVAL_THRESHOLD_MINOR = BigInt("100000000000");
+
+/** Invitation links live for seven days, then require a resend. */
+export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+export const INVITATION_STATUS = {
+  PENDING: "PENDING",
+  ACCEPTED: "ACCEPTED",
+  REVOKED: "REVOKED",
+  EXPIRED: "EXPIRED",
+} as const;
+
+export const PAYMENT_REQUEST_STATUS = {
+  PENDING_APPROVAL: "PENDING_APPROVAL",
+  APPROVED: "APPROVED",
+  PROCESSING: "PROCESSING",
+  COMPLETED: "COMPLETED",
+  REJECTED: "REJECTED",
+  CANCELED: "CANCELED",
+  FAILED: "FAILED",
+} as const;
+
+export const APPROVAL_DECISION = {
+  APPROVED: "APPROVED",
+  REJECTED: "REJECTED",
+} as const;
+
 /** Roles allowed to change the business profile and start a KYB check. */
 export const BUSINESS_ADMIN_ROLES: UserRole[] = [
   USER_ROLE.OWNER,
@@ -196,6 +233,19 @@ export const AUDIT_ACTION = {
   HOLD_CAPTURED: "HOLD_CAPTURED",
   HOLD_RELEASED: "HOLD_RELEASED",
   TRANSACTION_REVERSED: "TRANSACTION_REVERSED",
+  TEAM_INVITATION_CREATED: "TEAM_INVITATION_CREATED",
+  TEAM_INVITATION_RESENT: "TEAM_INVITATION_RESENT",
+  TEAM_INVITATION_REVOKED: "TEAM_INVITATION_REVOKED",
+  TEAM_INVITATION_ACCEPTED: "TEAM_INVITATION_ACCEPTED",
+  TEAM_ROLE_CHANGED: "TEAM_ROLE_CHANGED",
+  TEAM_MEMBER_DISABLED: "TEAM_MEMBER_DISABLED",
+  APPROVAL_POLICY_UPDATED: "APPROVAL_POLICY_UPDATED",
+  PAYMENT_REQUEST_CREATED: "PAYMENT_REQUEST_CREATED",
+  PAYMENT_REQUEST_APPROVED: "PAYMENT_REQUEST_APPROVED",
+  PAYMENT_REQUEST_REJECTED: "PAYMENT_REQUEST_REJECTED",
+  PAYMENT_REQUEST_CANCELED: "PAYMENT_REQUEST_CANCELED",
+  PAYMENT_REQUEST_POSTED: "PAYMENT_REQUEST_POSTED",
+  PAYMENT_REQUEST_FAILED: "PAYMENT_REQUEST_FAILED",
 } as const;
 
 export const ACCOUNT_STATUS = { ACTIVE: "ACTIVE", FROZEN: "FROZEN", CLOSED: "CLOSED" } as const;

@@ -17,6 +17,8 @@ export type NavIconName =
   | "account"
   | "transactions"
   | "card"
+  | "payments"
+  | "approvals"
   | "activity";
 
 export interface NavItem {
@@ -29,13 +31,15 @@ export interface NavItem {
   module?: string;
   /** One line used as the item's title/tooltip. */
   hint: string;
+  /** Small count shown beside the label (the approval queue). */
+  badge?: number;
 }
 
 /**
  * The owner/admin rail.
  *
- * Account, Transactions and Cards are live. Team stays a visible-but-deferred
- * item until Module 5 ships invitations and role management.
+ * Team, Payments and Approvals are live in Module 5. Account and Transactions
+ * stay operator-only because employees never see the business balance.
  */
 const OPERATOR_NAV: NavItem[] = [
   {
@@ -49,8 +53,8 @@ const OPERATOR_NAV: NavItem[] = [
     key: "team",
     label: "Team",
     icon: "team",
-    module: "M2b",
-    hint: "Invitations and roles — Module 2b",
+    href: "/dashboard/team",
+    hint: "Members, invitations and the approval policy",
   },
   {
     key: "account",
@@ -73,10 +77,25 @@ const OPERATOR_NAV: NavItem[] = [
     href: "/dashboard/cards",
     hint: "Issue and control employee cards",
   },
+  {
+    key: "payments",
+    label: "Payments",
+    icon: "payments",
+    href: "/dashboard/payments",
+    hint: "Request an outbound payment",
+  },
+  {
+    key: "approvals",
+    label: "Approvals",
+    icon: "approvals",
+    href: "/dashboard/approvals",
+    hint: "Payment requests waiting for a second person",
+  },
 ];
 
 /**
- * Employees have no team or business-level navigation.
+ * Employees have no team or business-level navigation. They see their own
+ * card and their own payment requests only.
  */
 const EMPLOYEE_NAV: NavItem[] = [
   {
@@ -93,6 +112,13 @@ const EMPLOYEE_NAV: NavItem[] = [
     href: "/dashboard/card",
     hint: "Your assigned virtual card",
   },
+  {
+    key: "payments",
+    label: "Payments",
+    icon: "payments",
+    href: "/dashboard/payments",
+    hint: "Your payment requests",
+  },
 ];
 
 /** Customer-facing operators. OPERATIONS is platform staff, not a customer. */
@@ -104,9 +130,17 @@ export function canSeeTeam(role: UserRole): boolean {
   return isOperator(role);
 }
 
-export function navForRole(role: UserRole): NavItem[] {
+export function navForRole(role: UserRole, pendingApprovals = 0): NavItem[] {
   if (canSeeTeam(role)) {
-    return OPERATOR_NAV;
+    if (pendingApprovals <= 0) {
+      return OPERATOR_NAV;
+    }
+
+    return OPERATOR_NAV.map((item) =>
+      item.key === "approvals"
+        ? { ...item, badge: pendingApprovals }
+        : item,
+    );
   }
 
   if (role === "EMPLOYEE") {
@@ -206,6 +240,14 @@ export function sectionForPath(pathname: string): string {
 
   if (pathname.startsWith("/dashboard/team")) {
     return "Team";
+  }
+
+  if (pathname.startsWith("/dashboard/payments")) {
+    return "Payments";
+  }
+
+  if (pathname.startsWith("/dashboard/approvals")) {
+    return "Approvals";
   }
 
   if (pathname.startsWith("/dashboard/cards")) {

@@ -73,6 +73,53 @@ export const LEDGER_ERRORS = {
   SANDBOX_DISABLED: "Sandbox ledger tools are disabled",
 } as const;
 
+export const TEAM_ERRORS = {
+  FORBIDDEN: "Only an owner or admin can manage the team",
+  OWNER_ONLY: "Only the business owner can do this",
+  INVITATION_INVALID: "This invitation link is no longer valid",
+  INVITATION_EMAIL_IN_USE:
+    "This email already belongs to another business and cannot be invited here",
+  INVITATION_EMAIL_DELETED:
+    "This email belongs to a deleted account and cannot be invited",
+  INVITATION_ALREADY_MEMBER: "This person is already a member of the business",
+  INVITATION_NOT_PENDING: "This invitation is no longer pending",
+  INVITATION_EMAIL_REGISTERED:
+    "An account already exists for this email. Sign in and accept the invitation instead.",
+  INVITATION_EMAIL_MISMATCH:
+    "Sign in with the email address this invitation was sent to",
+  INVITATION_OTHER_BUSINESS:
+    "This account already belongs to another business. A sign-in is scoped to one business.",
+  INVITATION_BUSINESS_UNAVAILABLE: "This business is not available",
+  MEMBER_NOT_FOUND: "Team member not found",
+  MEMBER_NOT_ACTIVE: "This membership is not active",
+  MEMBER_DISABLED:
+    "This person's membership is disabled and cannot be re-invited",
+  SELF_ROLE_CHANGE: "You cannot change your own role",
+  OWNER_ROLE_LOCKED: "The business owner cannot be demoted or disabled",
+  SELF_DISABLE: "You cannot disable your own membership",
+  THRESHOLD_TOO_LARGE: "Approval threshold exceeds the documented maximum",
+  THRESHOLD_INVALID: "Approval threshold must be a non-negative integer string",
+} as const;
+
+export const PAYMENT_ERRORS = {
+  BUSINESS_NOT_ACTIVE: "Business must be active before creating payments",
+  NOT_FOUND: "Payment request not found",
+  SELF_APPROVAL_FORBIDDEN: "You cannot approve your own payment request",
+  APPROVER_ROLE_REQUIRED:
+    "Only an owner or admin can approve or reject a payment",
+  ALREADY_DECIDED: "This payment request has already been decided",
+  INSUFFICIENT_FUNDS: "Insufficient available funds for this payment",
+  AMOUNT_INVALID: "Enter a valid positive amount in minor units",
+  AMOUNT_TOO_LARGE: "Amount exceeds the maximum single payment",
+  BENEFICIARY_INVALID:
+    "Beneficiary name must be between 1 and 120 characters",
+  IDEMPOTENCY_INVALID:
+    "Idempotency-Key must be 1-64 letters, numbers, colons, underscores or dashes",
+  CANCEL_FORBIDDEN: "Only the person who created the request can cancel it",
+  AGENT_FORBIDDEN: "Only a human user can decide a payment request",
+  ACCOUNT_NOT_ACTIVE: "Account is not active",
+} as const;
+
 export const WEBHOOK_ERRORS = {
   INVALID_SIGNATURE: "Invalid webhook signature",
   STALE_TIMESTAMP: "Webhook timestamp is outside the accepted window",

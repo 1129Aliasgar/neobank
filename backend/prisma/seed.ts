@@ -25,6 +25,7 @@ import {
   BUSINESS_STATUS,
   BUSINESS_TYPE,
   MEMBERSHIP_STATUS,
+  PAYMENT_REQUEST_STATUS,
   USER_ROLE,
   VERIFICATION_ENVIRONMENT,
   VERIFICATION_PROVIDER,
@@ -55,6 +56,16 @@ interface DemoBusiness {
   legalName: string;
   status: BusinessStatus;
   complete: boolean;
+  /**
+   * Seed a verification row, ledger and payment queue. The primary demo tenant
+   * gets all three; the second active tenant exists to prove tenant isolation
+   * and needs a ledger but not a shared payment queue.
+   */
+  seedFinance?: boolean;
+  /** Verification session id, unique per seeded business. */
+  verificationSessionId?: string;
+  /** Profile override for a tenant that is not the primary demo. */
+  profile?: Record<string, string | null>;
   users: DemoUser[];
 }
 
@@ -63,6 +74,7 @@ const demoBusinesses: DemoBusiness[] = [
     legalName: "NeoBank Demo Co",
     status: BUSINESS_STATUS.ACTIVE,
     complete: true,
+    verificationSessionId: "seed-demo-kyb-session",
     users: [
       { username: "owner", email: "owner@neobank.dev", role: USER_ROLE.OWNER },
       { username: "admin", email: "admin@neobank.dev", role: USER_ROLE.ADMIN },
@@ -75,6 +87,41 @@ const demoBusinesses: DemoBusiness[] = [
         username: "ops",
         email: "ops@neobank.dev",
         role: USER_ROLE.OPERATIONS,
+      },
+    ],
+  },
+  {
+    /*
+     * A second ACTIVE tenant. It has its own owner, ledger and verification, so
+     * cross-tenant reads can be proven with a live 404 instead of an
+     * inactive-business 409. It deliberately has no demo payment queue.
+     */
+    legalName: "NeoBank Second Co",
+    status: BUSINESS_STATUS.ACTIVE,
+    complete: true,
+    seedFinance: false,
+    verificationSessionId: "seed-second-kyb-session",
+    profile: {
+      tradingName: "Second Co",
+      businessType: BUSINESS_TYPE.CORPORATION,
+      registrationNumber: "SEED-CORP-0002",
+      industry: "Logistics",
+      description: "Second seeded tenant used for isolation checks.",
+      email: "second@neobank.dev",
+      phone: "+14155550124",
+      website: "https://second.neobank.dev",
+      addressLine1: "500 Mission Street",
+      addressLine2: "Floor 2",
+      city: "San Francisco",
+      state: "CA",
+      postalCode: "94105",
+      country: "US",
+    },
+    users: [
+      {
+        username: "second",
+        email: "second@neobank.dev",
+        role: USER_ROLE.OWNER,
       },
     ],
   },
@@ -116,7 +163,7 @@ async function seedBusiness(demo: DemoBusiness): Promise<string> {
   });
 
   const profile = demo.complete
-    ? COMPLETE_PROFILE
+    ? (demo.profile ?? COMPLETE_PROFILE)
     : {
         businessType: null,
         registrationNumber: null,
@@ -140,6 +187,13 @@ async function seedBusiness(demo: DemoBusiness): Promise<string> {
           country: "US",
           currency: "USD",
           status: demo.status,
+          /* Module 5 default: every positive payment needs a second person. */
+          ...(demo.complete
+            ? {
+                approvalThresholdMinor: BigInt(0),
+                requireSeparateApprover: true,
+              }
+            : {}),
         },
       })
     : await prisma.business.create({
@@ -149,24 +203,33 @@ async function seedBusiness(demo: DemoBusiness): Promise<string> {
           country: "US",
           currency: "USD",
           status: demo.status,
+          ...(demo.complete
+            ? {
+                approvalThresholdMinor: BigInt(0),
+                requireSeparateApprover: true,
+              }
+            : {}),
         },
       });
 
   return business.id;
 }
 
-async function seedVerification(businessId: string): Promise<void> {
+async function seedVerification(
+  businessId: string,
+  sessionId: string,
+): Promise<void> {
   /*
    * A synthetic approval for the demo business. `environment = SANDBOX` and a
    * scenario slug make it obvious in the API and the UI that this is not a
    * real KYB decision.
    */
   await prisma.verification.upsert({
-    where: { providerSessionId: "seed-demo-kyb-session" },
+    where: { providerSessionId: sessionId },
     create: {
       businessId,
       provider: VERIFICATION_PROVIDER.DIDIT,
-      providerSessionId: "seed-demo-kyb-session",
+      providerSessionId: sessionId,
       workflowId: "seed-workflow",
       environment: VERIFICATION_ENVIRONMENT.SANDBOX,
       sandboxScenario: "approve",
@@ -320,6 +383,103 @@ async function seedLedger(businessId: string): Promise<void> {
   });
 }
 
+/**
+ * Demo payment requests.
+ *
+ * One pending `$5,000` request proves the maker-checker queue on first login;
+ * one rejected request proves a terminal decision that posted nothing. Both are
+ * idempotent, so re-running the seed never creates a duplicate or a second
+ * ledger row.
+ */
+async function seedPayments(businessId: string): Promise<void> {
+  const [employee, admin] = await Promise.all([
+    prisma.user.findUnique({ where: { email: "employee@neobank.dev" } }),
+    prisma.user.findUnique({ where: { email: "admin@neobank.dev" } }),
+  ]);
+  if (!employee || !admin) return;
+
+  const business = await prisma.business.findUnique({
+    where: { id: businessId },
+    select: { currency: true, approvalThresholdMinor: true },
+  });
+  if (!business) return;
+
+  await prisma.paymentRequest.upsert({
+    where: {
+      businessId_idempotencyKey: {
+        businessId,
+        idempotencyKey: "seed:payment:pending:1",
+      },
+    },
+    create: {
+      businessId,
+      createdByUserId: employee.id,
+      beneficiaryName: "Acme Supplies",
+      beneficiaryReference: "INV-1042",
+      memo: "Office chairs",
+      amountMinor: BigInt(500000),
+      currency: business.currency,
+      status: PAYMENT_REQUEST_STATUS.PENDING_APPROVAL,
+      approvalThresholdMinor: business.approvalThresholdMinor,
+      requiredApprovals: 1,
+      approvalsCount: 0,
+      idempotencyKey: "seed:payment:pending:1",
+    },
+    update: {
+      status: PAYMENT_REQUEST_STATUS.PENDING_APPROVAL,
+      decisionByUserId: null,
+      decidedAt: null,
+      approvalsCount: 0,
+    },
+  });
+
+  const rejected = await prisma.paymentRequest.upsert({
+    where: {
+      businessId_idempotencyKey: {
+        businessId,
+        idempotencyKey: "seed:payment:rejected:1",
+      },
+    },
+    create: {
+      businessId,
+      createdByUserId: employee.id,
+      beneficiaryName: "Northwind Travel",
+      beneficiaryReference: "TRIP-88",
+      memo: "Conference travel",
+      amountMinor: BigInt(120000),
+      currency: business.currency,
+      status: PAYMENT_REQUEST_STATUS.REJECTED,
+      approvalThresholdMinor: business.approvalThresholdMinor,
+      requiredApprovals: 1,
+      approvalsCount: 1,
+      decisionByUserId: admin.id,
+      decidedAt: new Date(),
+      idempotencyKey: "seed:payment:rejected:1",
+    },
+    update: {
+      decisionByUserId: admin.id,
+    },
+  });
+
+  await prisma.approval.upsert({
+    where: {
+      paymentRequestId_actorUserId: {
+        paymentRequestId: rejected.id,
+        actorUserId: admin.id,
+      },
+    },
+    create: {
+      businessId,
+      paymentRequestId: rejected.id,
+      actorUserId: admin.id,
+      actorRole: USER_ROLE.ADMIN,
+      decision: "REJECTED",
+      reason: "Travel is out of policy this quarter",
+    },
+    update: {},
+  });
+}
+
 async function main() {
   const password = await bcrypt.hash(DEMO_PASSWORD, 10);
 
@@ -368,8 +528,14 @@ async function main() {
     }
 
     if (demo.complete) {
-      await seedVerification(businessId);
+      await seedVerification(
+        businessId,
+        demo.verificationSessionId ?? "seed-demo-kyb-session",
+      );
       await seedLedger(businessId);
+      if (demo.seedFinance !== false) {
+        await seedPayments(businessId);
+      }
     }
 
     console.log(`  business ${businessId} (${demo.status})\n`);

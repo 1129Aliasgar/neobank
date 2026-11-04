@@ -45,6 +45,21 @@ export function LoginForm() {
         /* Keep the hint if the follow-up read fails; the page guards itself. */
       }
 
+      /*
+       * An invitation link sends an existing person to `/login?next=...`.
+       * Only a dashboard path is accepted, so the parameter can never become
+       * an open redirect or a protocol-relative URL.
+       */
+      const next = new URLSearchParams(window.location.search).get("next");
+      if (
+        next &&
+        next.startsWith("/dashboard/") &&
+        !next.startsWith("//") &&
+        !next.includes("\\")
+      ) {
+        destination = next;
+      }
+
       router.replace(destination);
     } catch (caught) {
       setError(messageOf(caught));

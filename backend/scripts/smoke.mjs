@@ -26,6 +26,7 @@ const BASE = (process.env.API_URL ?? "http://localhost:5000/api/v1").replace(
 );
 const PASSWORD = process.env.SMOKE_PASSWORD ?? "NeoBank@123";
 const CARD_FLOW = process.env.SMOKE_CARD_FLOW === "1";
+const TEAM_FLOW = process.env.SMOKE_TEAM_FLOW === "1";
 const RUN_ID = Date.now().toString(36);
 
 let passed = 0;
@@ -257,19 +258,6 @@ async function main() {
   check("unverified business cannot deposit", pendingDeposit.status === 409);
 
   if (foreignCard) {
-    /*
-     * Use the second seeded tenant (`NeoBank Pending Co`, despite the name it
-     * is ACTIVE) so the card lookup actually runs. A brand-new unverified
-     * business is gated earlier with 409, which is a different assertion.
-     */
-    const otherTenant = await login("pending@neobank.dev");
-    const crossTenant = await request(`/cards/${foreignCard.id}`, {
-      token: otherTenant.token,
-    });
-    check("foreign tenant card returns 404", crossTenant.status === 404);
-  }
-
-  if (foreignCard) {
     const gatedTenant = await request(`/cards/${foreignCard.id}`, {
       token: newcomer.token,
     });
@@ -277,6 +265,571 @@ async function main() {
       "unverified business cannot reach the card lookup",
       gatedTenant.status === 409,
       `status ${gatedTenant.status}`,
+    );
+  }
+
+  if (foreignCard) {
+    /*
+     * `NeoBank Second Co` is a second ACTIVE tenant in the seed. Using it here
+     * proves a live 404 rather than the 409 an unverified business would get.
+     */
+    const otherTenant = await login("second@neobank.dev");
+    const crossTenant = await request(`/cards/${foreignCard.id}`, {
+      token: otherTenant.token,
+    });
+    check("foreign tenant card returns 404", crossTenant.status === 404);
+
+    const crossTenantPayment = await request(
+      `/payments/smoke-payment-that-does-not-exist`,
+      { token: otherTenant.token },
+    );
+    check(
+      "foreign tenant payment id returns 404",
+      crossTenantPayment.status === 404,
+    );
+  }
+
+  section("module 5 · team and payment boundaries (read-only)");
+  const ownerTeam = await request("/team", { token: owner.token });
+  const teamMembers = ownerTeam.json?.data?.members ?? [];
+  check("owner can list the team", ownerTeam.status === 200);
+  check(
+    "team list contains owner, admin and employee",
+    ["OWNER", "ADMIN", "EMPLOYEE"].every((role) =>
+      teamMembers.some((member) => member.role === role),
+    ),
+  );
+
+  const adminTeam = await request("/team", { token: admin.token });
+  check("admin can list the team", adminTeam.status === 200);
+  const employeeTeam = await request("/team", { token: employee.token });
+  check("employee cannot list the team", employeeTeam.status === 403);
+  const opsTeam = await request("/team", { token: ops.token });
+  check("operations cannot list the team", opsTeam.status === 403);
+
+  const employeeMember = teamMembers.find(
+    (member) => member.user.email === "employee@neobank.dev",
+  );
+  const ownerMember = teamMembers.find((member) => member.isYou);
+  check("team member row is present for the employee", Boolean(employeeMember));
+
+  if (employeeMember) {
+    const secondTenant = await login("second@neobank.dev");
+    const secondTeam = await request("/team", { token: secondTenant.token });
+    check("another tenant sees only its own team", secondTeam.status === 200);
+    check(
+      "another tenant's team contains no demo member",
+      (secondTeam.json?.data?.members ?? []).every(
+        (member) => member.businessId === secondTenant.user.business?.id,
+      ),
+    );
+
+    const foreignMemberPatch = await request(
+      `/team/members/${employeeMember.id}`,
+      {
+        method: "PATCH",
+        token: secondTenant.token,
+        body: { role: "EMPLOYEE" },
+      },
+    );
+    check(
+      "another tenant cannot change a real member",
+      foreignMemberPatch.status === 404,
+    );
+
+    const adminChangesRole = await request(
+      `/team/members/${employeeMember.id}`,
+      {
+        method: "PATCH",
+        token: admin.token,
+        body: { role: "ADMIN" },
+      },
+    );
+    check("admin cannot change a role", adminChangesRole.status === 403);
+
+    const adminDisables = await request(`/team/members/${employeeMember.id}`, {
+      method: "DELETE",
+      token: admin.token,
+    });
+    check("admin cannot disable a member", adminDisables.status === 403);
+  }
+
+  if (ownerMember) {
+    const ownerChangesOwnRole = await request(
+      `/team/members/${ownerMember.id}`,
+      {
+        method: "PATCH",
+        token: owner.token,
+        body: { role: "EMPLOYEE" },
+      },
+    );
+    check("owner cannot change their own role", ownerChangesOwnRole.status === 403);
+
+    const ownerDisablesSelf = await request(`/team/members/${ownerMember.id}`, {
+      method: "DELETE",
+      token: owner.token,
+    });
+    check("owner cannot disable their own membership", ownerDisablesSelf.status === 403);
+  }
+
+  const foreignMember = await request("/team/members/smoke-missing-member", {
+    method: "PATCH",
+    token: owner.token,
+    body: { role: "EMPLOYEE" },
+  });
+  check("foreign member id returns 404", foreignMember.status === 404);
+
+  const adminPolicyPatch = await request(
+    "/businesses/current/approval-policy",
+    {
+      method: "PATCH",
+      token: admin.token,
+      body: { approvalThresholdMinor: "10000" },
+    },
+  );
+  check("admin cannot change the approval threshold", adminPolicyPatch.status === 403);
+
+  const ownerPolicy = await request("/businesses/current/approval-policy", {
+    token: owner.token,
+  });
+  check("owner can read the approval policy", ownerPolicy.status === 200);
+  check(
+    "policy exposes an integer-string threshold",
+    typeof ownerPolicy.json?.data?.policy?.approvalThresholdMinor === "string",
+  );
+
+  const employeePayments = await request("/payments", { token: employee.token });
+  const employeeRequests = employeePayments.json?.data?.requests ?? [];
+  check("employee can list own payment requests", employeePayments.status === 200);
+  check(
+    "employee payment list contains only their own rows",
+    employeeRequests.every(
+      (row) => row.createdByUserId === employee.user.id,
+    ),
+  );
+
+  const employeeQueue = await request("/approvals", { token: employee.token });
+  check("employee cannot read the approval queue", employeeQueue.status === 403);
+  const opsQueue = await request("/approvals", { token: ops.token });
+  check("operations cannot read the approval queue", opsQueue.status === 403);
+
+  const opsPayment = await request("/payments", {
+    method: "POST",
+    token: ops.token,
+    body: { beneficiaryName: "Ops Vendor", amountMinor: "100" },
+  });
+  check("operations cannot create a payment", opsPayment.status === 403);
+
+  const foreignPayment = await request("/payments/smoke-missing-payment", {
+    token: owner.token,
+  });
+  check("foreign payment id returns 404", foreignPayment.status === 404);
+
+  if (TEAM_FLOW) {
+    section("module 5 · invitations, maker-checker and threshold (mutates)");
+
+    const before = balanceOf(
+      await request("/accounts/current", { token: owner.token }),
+    );
+
+    /* --- Invitation: create, rotate, register, change role, disable. --- */
+    const inviteEmail = `smoke+invite+${RUN_ID}@neobank.test`;
+    const firstInvite = await request("/team/invitations", {
+      method: "POST",
+      token: owner.token,
+      body: { email: inviteEmail, role: "EMPLOYEE" },
+    });
+    check("owner creates an invitation", firstInvite.status === 201);
+    check(
+      "invitation returns a raw token and link exactly on create",
+      typeof firstInvite.json?.data?.token === "string" &&
+        typeof firstInvite.json?.data?.link === "string",
+    );
+    const firstToken = firstInvite.json?.data?.token;
+
+    const secondInvite = await request("/team/invitations", {
+      method: "POST",
+      token: owner.token,
+      body: { email: inviteEmail, role: "EMPLOYEE" },
+    });
+    const secondToken = secondInvite.json?.data?.token;
+    check(
+      "a second invitation rotates the live token",
+      secondInvite.status === 201 && secondToken !== firstToken,
+    );
+    const oldToken = await request(
+      `/team/invitations/${encodeURIComponent(firstToken)}`,
+    );
+    check("the replaced token returns 404", oldToken.status === 404);
+
+    const preview = await request(
+      `/team/invitations/${encodeURIComponent(secondToken)}`,
+    );
+    check("the live token resolves publicly", preview.status === 200);
+    check(
+      "the preview names the invited business",
+      preview.json?.data?.invitation?.business?.id ===
+        owner.user.business?.id &&
+        typeof preview.json?.data?.invitation?.business?.legalName === "string",
+    );
+
+    const wrongEmailAccept = await request(
+      `/team/invitations/${encodeURIComponent(secondToken)}/accept`,
+      { method: "POST", token: employee.token, body: {} },
+    );
+    check("accepting with a different email returns 403", wrongEmailAccept.status === 403);
+
+    const register = await request(
+      `/team/invitations/${encodeURIComponent(secondToken)}/register`,
+      {
+        method: "POST",
+        body: {
+          username: `smokeinvite_${RUN_ID}`,
+          password: PASSWORD,
+        },
+      },
+    );
+    check("token-gated register creates the invited user", register.status === 201);
+    check(
+      "token-gated register creates an EMPLOYEE, not an OWNER",
+      register.json?.data?.user?.role === "EMPLOYEE",
+    );
+    check(
+      "token-gated register joins the existing business",
+      register.json?.data?.business?.id === owner.user.business?.id,
+    );
+    const invitedToken = register.json?.data?.token;
+    const invitedId = register.json?.data?.user?.id;
+
+    const usedToken = await request(
+      `/team/invitations/${encodeURIComponent(secondToken)}`,
+    );
+    check("an accepted token returns 404", usedToken.status === 404);
+
+    const invitedTeam = await request("/team", { token: invitedToken });
+    check("an invited employee cannot list the team", invitedTeam.status === 403);
+
+    const invitedMember = (await request("/team", { token: owner.token })).json
+      ?.data?.members?.find((member) => member.userId === invitedId);
+    check("the invited member appears on the team", Boolean(invitedMember));
+
+    if (invitedMember) {
+      const promote = await request(`/team/members/${invitedMember.id}`, {
+        method: "PATCH",
+        token: owner.token,
+        body: { role: "ADMIN" },
+      });
+      check("owner promotes the invited employee to admin", promote.status === 200);
+      check("the promotion returns the new role", promote.json?.data?.member?.role === "ADMIN");
+
+      const staleToken = await request("/auth/me", { token: invitedToken });
+      check("a role change invalidates the old JWT", staleToken.status === 401);
+
+      const relogin = await login(inviteEmail);
+      check("a fresh login sees the new admin role", relogin.user.role === "ADMIN");
+
+      const disable = await request(`/team/members/${invitedMember.id}`, {
+        method: "DELETE",
+        token: owner.token,
+      });
+      check("owner disables the member", disable.status === 200);
+      check("the disabled membership is marked DISABLED", disable.json?.data?.member?.status === "DISABLED");
+
+      const disabledSession = await request("/auth/me", {
+        token: relogin.token,
+      });
+      check("a disabled member's JWT stops working", disabledSession.status === 401);
+
+      const reinvite = await request("/team/invitations", {
+        method: "POST",
+        token: owner.token,
+        body: { email: inviteEmail, role: "EMPLOYEE" },
+      });
+      check("a disabled member cannot be re-invited into a dead link", reinvite.status === 409);
+    }
+
+    const crossBusinessInvite = await request("/team/invitations", {
+      method: "POST",
+      token: owner.token,
+      body: { email: "pending@neobank.dev", role: "EMPLOYEE" },
+    });
+    check(
+      "inviting another business's member is refused",
+      crossBusinessInvite.status === 409,
+    );
+
+    /* --- Maker-checker: employee request, admin approval. --- */
+    const paymentBody = {
+      beneficiaryName: "Smoke Supplies",
+      beneficiaryReference: `INV-${RUN_ID}`,
+      amountMinor: "500000",
+      memo: "Smoke maker-checker",
+    };
+    const created = await request("/payments", {
+      method: "POST",
+      token: employee.token,
+      idempotencyKey: `smoke-payment-${RUN_ID}`,
+      body: paymentBody,
+    });
+    check("employee creates a payment request", created.status === 201);
+    check(
+      "an amount at the threshold is PENDING_APPROVAL",
+      created.json?.data?.request?.status === "PENDING_APPROVAL",
+    );
+    const paymentId = created.json?.data?.request?.id;
+
+    const secondTenant = await login("second@neobank.dev");
+    const foreignRealPayment = await request(`/payments/${paymentId}`, {
+      token: secondTenant.token,
+    });
+    check(
+      "another tenant cannot read a real payment id",
+      foreignRealPayment.status === 404,
+    );
+    const foreignApprove = await request(`/payments/${paymentId}/approve`, {
+      method: "POST",
+      token: secondTenant.token,
+      body: {},
+    });
+    check(
+      "another tenant cannot approve a foreign payment",
+      foreignApprove.status === 404,
+    );
+
+    const afterCreate = balanceOf(
+      await request("/accounts/current", { token: owner.token }),
+    );
+    check(
+      "creating a pending request does not move the ledger",
+      minor(afterCreate.ledgerMinor) === minor(before.ledgerMinor),
+    );
+
+    const replay = await request("/payments", {
+      method: "POST",
+      token: employee.token,
+      idempotencyKey: `smoke-payment-${RUN_ID}`,
+      body: paymentBody,
+    });
+    check("a repeated idempotency key returns the original", replay.json?.data?.request?.id === paymentId);
+    check("the replay is labelled", replay.json?.data?.replayed === true);
+
+    const selfApproveEmployee = await request(
+      `/payments/${paymentId}/approve`,
+      { method: "POST", token: employee.token, body: {} },
+    );
+    check(
+      "an employee cannot approve",
+      selfApproveEmployee.status === 403,
+    );
+
+    const approved = await request(`/payments/${paymentId}/approve`, {
+      method: "POST",
+      token: admin.token,
+      body: {},
+    });
+    check("an admin approves a different person's request", approved.status === 200);
+    check("the request becomes COMPLETED", approved.json?.data?.request?.status === "COMPLETED");
+    check(
+      "the completed request names the approver",
+      approved.json?.data?.request?.decisionByUserId === admin.user.id,
+    );
+    check(
+      "a balanced PAYMENT transaction is linked",
+      approved.json?.data?.request?.ledgerTransaction?.kind === "PAYMENT" &&
+        approved.json?.data?.request?.ledgerTransaction?.lines?.length === 2,
+    );
+
+    const afterApproval = balanceOf(
+      await request("/accounts/current", { token: owner.token }),
+    );
+    check(
+      "approval decreases available balance by exactly the amount",
+      minor(before.availableMinor) - minor(afterApproval.availableMinor) ===
+        500000n,
+      `${before.availableMinor} -> ${afterApproval.availableMinor}`,
+    );
+
+    const doubleApprove = await request(`/payments/${paymentId}/approve`, {
+      method: "POST",
+      token: owner.token,
+      body: {},
+    });
+    check("a second approval returns 409", doubleApprove.status === 409);
+    const afterDouble = balanceOf(
+      await request("/accounts/current", { token: owner.token }),
+    );
+    check(
+      "a second approval posts nothing",
+      minor(afterDouble.ledgerMinor) === minor(afterApproval.ledgerMinor),
+    );
+
+    /* --- Self-approval by an approver, then rejection. --- */
+    const adminRequest = await request("/payments", {
+      method: "POST",
+      token: admin.token,
+      idempotencyKey: `smoke-admin-payment-${RUN_ID}`,
+      body: {
+        beneficiaryName: "Admin Self Vendor",
+        amountMinor: "1000",
+      },
+    });
+    const adminPaymentId = adminRequest.json?.data?.request?.id;
+    const adminSelfApprove = await request(
+      `/payments/${adminPaymentId}/approve`,
+      { method: "POST", token: admin.token, body: {} },
+    );
+    check(
+      "an owner/admin cannot approve their own request",
+      adminSelfApprove.status === 403,
+    );
+
+    const emptyReject = await request(`/payments/${adminPaymentId}/reject`, {
+      method: "POST",
+      token: owner.token,
+      body: {},
+    });
+    check("rejection without a reason is refused", emptyReject.status === 400);
+
+    const rejected = await request(`/payments/${adminPaymentId}/reject`, {
+      method: "POST",
+      token: owner.token,
+      body: { reason: "Out of policy this quarter" },
+    });
+    check("a different approver rejects with a reason", rejected.status === 200);
+    check("the request becomes REJECTED", rejected.json?.data?.request?.status === "REJECTED");
+    check(
+      "rejection posts no ledger transaction",
+      rejected.json?.data?.request?.ledgerTransactionId === null,
+    );
+
+    const rejectedApprove = await request(
+      `/payments/${adminPaymentId}/approve`,
+      { method: "POST", token: owner.token, body: {} },
+    );
+    check("a rejected request cannot be approved later", rejectedApprove.status === 409);
+
+    /* --- Cancel and insufficient funds. --- */
+    const cancelRequest = await request("/payments", {
+      method: "POST",
+      token: employee.token,
+      idempotencyKey: `smoke-cancel-${RUN_ID}`,
+      body: { beneficiaryName: "Cancel Vendor", amountMinor: "2500" },
+    });
+    const cancelId = cancelRequest.json?.data?.request?.id;
+    const canceled = await request(`/payments/${cancelId}/cancel`, {
+      method: "POST",
+      token: employee.token,
+      body: {},
+    });
+    check("the creator cancels a pending request", canceled.status === 200);
+    check("the request becomes CANCELED", canceled.json?.data?.request?.status === "CANCELED");
+
+    const available = minor(
+      balanceOf(await request("/accounts/current", { token: owner.token }))
+        .availableMinor,
+    );
+    const hugeRequest = await request("/payments", {
+      method: "POST",
+      token: employee.token,
+      idempotencyKey: `smoke-huge-${RUN_ID}`,
+      body: {
+        beneficiaryName: "Too Large Vendor",
+        amountMinor: (available + 100000n).toString(),
+      },
+    });
+    const hugeId = hugeRequest.json?.data?.request?.id;
+    const hugeApprove = await request(`/payments/${hugeId}/approve`, {
+      method: "POST",
+      token: admin.token,
+      body: {},
+    });
+    check("approval with insufficient funds returns 409", hugeApprove.status === 409);
+    const hugeDetail = await request(`/payments/${hugeId}`, {
+      token: owner.token,
+    });
+    check(
+      "the insufficient-funds request stays pending",
+      hugeDetail.json?.data?.request?.status === "PENDING_APPROVAL",
+    );
+    await request(`/payments/${hugeId}/cancel`, {
+      method: "POST",
+      token: employee.token,
+      body: {},
+    });
+
+    /* --- Employee isolation on a foreign payment row. --- */
+    const employeeReadsAdmin = await request(`/payments/${adminPaymentId}`, {
+      token: employee.token,
+    });
+    check(
+      "an employee cannot read another person's payment",
+      employeeReadsAdmin.status === 404,
+    );
+
+    /* --- Threshold: below auto-approves, at the line waits. --- */
+    const setThreshold = await request("/businesses/current/approval-policy", {
+      method: "PATCH",
+      token: owner.token,
+      body: { approvalThresholdMinor: "10000" },
+    });
+    check("owner sets a $100 threshold", setThreshold.status === 200);
+
+    const below = await request("/payments", {
+      method: "POST",
+      token: employee.token,
+      idempotencyKey: `smoke-below-${RUN_ID}`,
+      body: { beneficiaryName: "Small Vendor", amountMinor: "5000" },
+    });
+    check("below-threshold auto-approval completes", below.json?.data?.request?.status === "COMPLETED");
+    check(
+      "auto-approval records no human approver",
+      below.json?.data?.request?.decisionByUserId === null,
+    );
+
+    const atThreshold = await request("/payments", {
+      method: "POST",
+      token: employee.token,
+      idempotencyKey: `smoke-at-${RUN_ID}`,
+      body: { beneficiaryName: "At Threshold Vendor", amountMinor: "10000" },
+    });
+    const atThresholdId = atThreshold.json?.data?.request?.id;
+    check(
+      "an amount exactly at the threshold waits",
+      atThreshold.json?.data?.request?.status === "PENDING_APPROVAL",
+    );
+    await request(`/payments/${atThresholdId}/cancel`, {
+      method: "POST",
+      token: employee.token,
+      body: {},
+    });
+
+    const restore = await request("/businesses/current/approval-policy", {
+      method: "PATCH",
+      token: owner.token,
+      body: { approvalThresholdMinor: "0" },
+    });
+    check("owner restores the zero threshold", restore.status === 200);
+
+    /* --- Validation refusals. --- */
+    for (const amountMinor of ["0", "-1", "1.5", "999999999999999999"]) {
+      const invalid = await request("/payments", {
+        method: "POST",
+        token: employee.token,
+        idempotencyKey: `smoke-invalid-${amountMinor}-${RUN_ID}`,
+        body: { beneficiaryName: "Invalid", amountMinor },
+      });
+      check(
+        `amount ${amountMinor} is refused`,
+        invalid.status === 400 || invalid.status === 422,
+      );
+    }
+
+    const integrityAfterTeam = await request("/operations/ledger/integrity", {
+      token: ops.token,
+    });
+    check(
+      "integrity clean after team and payment flow",
+      integrityAfterTeam.json?.data?.ok === true,
     );
   }
 

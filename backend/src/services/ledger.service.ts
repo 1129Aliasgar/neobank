@@ -8,7 +8,7 @@ import {
   USER_ROLE,
   type UserRole,
 } from "../constants/constants.js";
-import { LEDGER_ERRORS } from "../constants/error.js";
+import { LEDGER_ERRORS, PAYMENT_ERRORS } from "../constants/error.js";
 import ApiError from "../utils/apiError.js";
 import { auditEntry } from "../utils/audit.js";
 import {
@@ -206,7 +206,7 @@ export default class LedgerService {
       businessId: string;
       accountId: string;
       currency: string;
-      kind: "DEPOSIT" | "CARD_CAPTURE" | "CARD_REFUND" | "REVERSAL";
+      kind: "DEPOSIT" | "CARD_CAPTURE" | "CARD_REFUND" | "REVERSAL" | "PAYMENT";
       amountMinor: bigint;
       description: string;
       idempotencyKey: string;
@@ -1260,6 +1260,114 @@ export default class LedgerService {
 
       return { applied: true, replayed: posted.replayed };
     });
+  }
+
+  /**
+   * Payment primitive used by the maker-checker flow.
+   *
+   * It runs on the caller's transaction so the approval row, the payment
+   * request transition and the ledger posting commit or roll back together.
+   * The account row is locked before the available balance is read, which is
+   * what stops two approvers from spending the same funds.
+   */
+  async postPaymentWithin(
+    tx: Tx,
+    input: {
+      businessId: string;
+      paymentRequestId: string;
+      actorUserId: string;
+      amountMinor: bigint;
+      beneficiaryName: string;
+    },
+  ) {
+    const business = await tx.business.findUnique({
+      where: { id: input.businessId },
+      select: { status: true, currency: true },
+    });
+    if (!business) throw new ApiError(PAYMENT_ERRORS.BUSINESS_NOT_ACTIVE, 409);
+    if (business.status !== BUSINESS_STATUS.ACTIVE)
+      throw new ApiError(PAYMENT_ERRORS.BUSINESS_NOT_ACTIVE, 409);
+
+    const { account, currency } = await this.account(tx, input.businessId);
+    if (account.status !== "ACTIVE")
+      throw new ApiError(PAYMENT_ERRORS.ACCOUNT_NOT_ACTIVE, 409);
+
+    const idempotencyKey = `payment:${input.paymentRequestId}`;
+    const requestHash = hashRequest({
+      paymentRequestId: input.paymentRequestId,
+      amountMinor: input.amountMinor.toString(),
+      currency,
+      beneficiaryName: input.beneficiaryName,
+    });
+
+    /*
+     * Re-check the idempotency key before the balance check so a replay of an
+     * already-posted payment never fails just because the wallet has since
+     * spent the money. `post` still validates the request hash.
+     */
+    const replay = await tx.ledgerTransaction.findUnique({
+      where: {
+        businessId_idempotencyKey: {
+          businessId: input.businessId,
+          idempotencyKey,
+        },
+      },
+      include: {
+        entries: { include: { ledgerAccount: true } },
+        reversedBy: true,
+        reverses: true,
+      },
+    });
+
+    if (replay) {
+      if (replay.requestHash !== requestHash)
+        throw new ApiError(LEDGER_ERRORS.IDEMPOTENCY_KEY_REUSED, 409);
+      return {
+        transaction: mapTransaction(
+          replay as unknown as Record<string, unknown>,
+        ),
+        replayed: true,
+        accountId: account.id,
+        balance: this.moneyBalance(await this.balance(tx, account.id)),
+      };
+    }
+
+    await tx.$queryRaw`SELECT id FROM "Account" WHERE id = ${account.id} FOR UPDATE`;
+    const current = await this.balance(tx, account.id);
+    if (input.amountMinor > current.availableMinor)
+      throw new ApiError(PAYMENT_ERRORS.INSUFFICIENT_FUNDS, 409);
+
+    const posted = await this.post(tx, {
+      businessId: input.businessId,
+      accountId: account.id,
+      currency,
+      kind: "PAYMENT",
+      amountMinor: input.amountMinor,
+      description: `Payment · ${input.beneficiaryName}`.slice(0, 160),
+      idempotencyKey,
+      requestHash,
+      sourceType: "PAYMENT_REQUEST",
+      sourceId: input.paymentRequestId,
+      actorUserId: input.actorUserId,
+      lines: [
+        {
+          code: "2010",
+          direction: "DEBIT",
+          amountMinor: input.amountMinor,
+        },
+        {
+          code: "1010",
+          direction: "CREDIT",
+          amountMinor: input.amountMinor,
+        },
+      ],
+    });
+
+    return {
+      ...posted,
+      accountId: account.id,
+      balance: this.moneyBalance(await this.balance(tx, account.id)),
+    };
   }
 
   async integrity() {

@@ -11,3 +11,5 @@ import "./webhook.controller.js";
 import "./ledger.controller.js";
 import "./operations.controller.js";
 import "./card.controller.js";
+import "./team.controller.js";
+import "./payment.controller.js";

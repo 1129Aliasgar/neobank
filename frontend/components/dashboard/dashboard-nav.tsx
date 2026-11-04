@@ -65,6 +65,14 @@ export function DashboardNav({
                     )}
                   />
                   <span className="truncate">{item.label}</span>
+                  {item.badge ? (
+                    <span
+                      aria-label={`${item.badge} pending`}
+                      className="ml-auto min-w-5 shrink-0 bg-vermilion px-1.5 py-0.5 text-center font-mono text-[9px] leading-none text-paper-raised"
+                    >
+                      {item.badge}
+                    </span>
+                  ) : null}
                 </Link>
               ) : (
                 <div

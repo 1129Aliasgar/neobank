@@ -12,6 +12,8 @@ export const TYPES = {
   WebhookService: Symbol.for("WebhookService"),
   LedgerService: Symbol.for("LedgerService"),
   CardService: Symbol.for("CardService"),
+  TeamService: Symbol.for("TeamService"),
+  PaymentService: Symbol.for("PaymentService"),
 
   // Repository Types
   AuthRepository: Symbol.for("AuthRepository"),

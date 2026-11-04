@@ -5,8 +5,9 @@ import { usePathname } from "next/navigation";
 import { Wordmark } from "@/components/brand/wordmark";
 import { StatusPill } from "@/components/ui/alert";
 import { useSignOut } from "@/lib/session";
-import { businessStatus, navForRole } from "@/lib/dashboard";
+import { businessStatus, isOperator, navForRole } from "@/lib/dashboard";
 import type { CurrentBusiness } from "@/lib/business";
+import { paymentsApi } from "@/lib/payments";
 import {
   DashboardSessionProvider,
   useDashboardSession,
@@ -60,6 +61,38 @@ export function DashboardShell({
 }) {
   const pathname = usePathname();
   const [navOpen, setNavOpen] = useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
+
+  /*
+   * The sidebar badge is a convenience, never an authorisation: the queue
+   * endpoint itself refuses non-approvers. A failed read leaves the badge
+   * absent rather than breaking navigation.
+   */
+  useEffect(() => {
+    if (!isOperator(current.role)) {
+      return;
+    }
+
+    let active = true;
+    void paymentsApi
+      .queue()
+      .then((queue) => {
+        if (active) {
+          setPendingApprovals(queue.count);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setPendingApprovals(0);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [current.role, pathname]);
+
+  const navItems = navForRole(current.role, pendingApprovals);
 
   useEffect(() => {
     if (!navOpen) {
@@ -132,7 +165,7 @@ export function DashboardShell({
               </div>
               <div className="mt-8">
                 <DashboardNav
-                  items={navForRole(current.role)}
+                  items={navItems}
                   pathname={pathname}
                   onNavigate={() => setNavOpen(false)}
                 />
@@ -143,7 +176,7 @@ export function DashboardShell({
 
         <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-4 py-6 sm:px-7 sm:py-9 lg:grid-cols-[12rem_minmax(0,1fr)] lg:gap-12 lg:px-10 lg:py-12">
           <aside className="hidden min-w-0 lg:block lg:pt-1">
-            <DashboardNav items={navForRole(current.role)} pathname={pathname} />
+            <DashboardNav items={navItems} pathname={pathname} />
           </aside>
           <main className="min-w-0">{children}</main>
         </div>

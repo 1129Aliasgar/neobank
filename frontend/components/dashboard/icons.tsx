@@ -78,6 +78,23 @@ export function NavIcon({ name, ...props }: IconProps & { name: NavIconName }) {
         </Frame>
       );
 
+    case "payments":
+      return (
+        <Frame {...props}>
+          <rect x="2.8" y="6" width="18.4" height="12" rx="1.4" />
+          <circle cx="12" cy="12" r="2.6" />
+          <path d="M6 9.4v5.2M18 9.4v5.2" />
+        </Frame>
+      );
+
+    case "approvals":
+      return (
+        <Frame {...props}>
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="m8 12.2 2.7 2.8L16.3 9" />
+        </Frame>
+      );
+
     case "activity":
       return (
         <Frame {...props}>

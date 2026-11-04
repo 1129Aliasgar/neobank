@@ -74,6 +74,35 @@ enum MembershipStatus {
   DISABLED
 }
 
+/** Lifecycle of a one-time team invitation link. */
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+/**
+ * Payment request lifecycle.
+ * Approval is a human decision; PROCESSING is the rail call; COMPLETED is the
+ * ledger result. The MVP posts immediately, but the intermediate values stay
+ * so a retry or reconciliation pass can reason about a request in flight.
+ */
+enum PaymentRequestStatus {
+  PENDING_APPROVAL
+  APPROVED
+  PROCESSING
+  COMPLETED
+  REJECTED
+  CANCELED
+  FAILED
+}
+
+enum ApprovalDecision {
+  APPROVED
+  REJECTED
+}
+
 /**
  * Verification attempt state.
  * Five values, deliberately: the API and the UI only ever reason about these.
@@ -247,6 +276,11 @@ model User {
   blacklistedTokens BlacklistToken[]
   memberships       BusinessMember[]
   cardholders       Cardholder[]
+  invitationsSent     Invitation[]     @relation("InvitationInviter")
+  invitationsAccepted Invitation[]     @relation("InvitationAcceptor")
+  paymentRequests     PaymentRequest[] @relation("PaymentInitiator")
+  paymentDecisions    PaymentRequest[] @relation("PaymentDecider")
+  approvals           Approval[]
 
   @@index([isDeleted, createdAt])
 }
@@ -317,6 +351,12 @@ model Business {
 
   status BusinessStatus @default(PENDING_VERIFICATION)
 
+  /// Payments at or above this amount require a second person.
+  /// 0 means every positive payment requires approval.
+  approvalThresholdMinor BigInt @default(0)
+  /// Kept explicit so the maker-checker rule cannot be switched off silently.
+  requireSeparateApprover Boolean @default(true)
+
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
@@ -333,6 +373,9 @@ model Business {
   cards              Card[]
   cardAuthorizations CardAuthorization[]
   cardTransactions   CardTransaction[]
+  invitations        Invitation[]
+  paymentRequests    PaymentRequest[]
+  approvals          Approval[]
 
   @@index([status, createdAt])
 }
@@ -354,6 +397,7 @@ model Account {
   holds              Hold[]
   cardAuthorizations CardAuthorization[]
   cardTransactions   CardTransaction[]
+  paymentRequests    PaymentRequest[]
 
   @@unique([businessId, currency])
   @@index([status, openedAt])
@@ -400,6 +444,7 @@ model LedgerTransaction {
   account               Account                 @relation(fields: [accountId], references: [id], onDelete: Restrict)
   business              Business                @relation(fields: [businessId], references: [id], onDelete: Restrict)
   entries               LedgerEntry[]
+  paymentRequest        PaymentRequest?
 
   @@unique([businessId, idempotencyKey])
   @@index([accountId, postedAt, id])
@@ -572,7 +617,119 @@ model BusinessMember {
 }
 
 // ==========================================
-// 5. VERIFICATION
+// 5. TEAM INVITATION
+// ==========================================
+
+/**
+ * A single-use invitation link.
+ * Only the SHA-256 of the token is stored: the raw value is shown once to the
+ * inviter. `email` is normalised to lower case before storage and matching. A
+ * partial unique index in the migration allows one PENDING invitation per
+ * `(businessId, lower(email))`, so a resend rotates the link instead of leaving
+ * two live tokens for the same person.
+ */
+model Invitation {
+  id         String           @id @default(cuid())
+  businessId String
+  email      String
+  role       UserRole         @default(EMPLOYEE)
+  tokenHash  String           @unique
+  status     InvitationStatus @default(PENDING)
+
+  invitedByUserId  String
+  expiresAt        DateTime  @db.Timestamptz(3)
+  acceptedAt       DateTime? @db.Timestamptz(3)
+  acceptedByUserId String?
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(3)
+
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  invitedBy  User     @relation("InvitationInviter", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+  acceptedBy User?    @relation("InvitationAcceptor", fields: [acceptedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, status])
+  @@index([email, status])
+  @@index([expiresAt])
+}
+
+// ==========================================
+// 6. PAYMENT REQUEST AND APPROVAL
+// ==========================================
+
+/**
+ * The first outbound money flow: a human asks to pay a beneficiary, and a
+ * different OWNER or ADMIN decides. The request snapshots the policy at
+ * creation so a later threshold change cannot rewrite history. The ledger row
+ * is linked after approval; money never moves while the request is pending.
+ */
+model PaymentRequest {
+  id         String @id @default(cuid())
+  businessId String
+  createdByUserId String
+  accountId  String?
+
+  beneficiaryName      String
+  /// Display only: the simulator never needs a real bank account number.
+  beneficiaryReference String?
+  memo                 String?
+
+  amountMinor BigInt
+  currency    String @db.Char(3)
+
+  status PaymentRequestStatus @default(PENDING_APPROVAL)
+  /// Snapshot of the policy at creation; never rewritten.
+  approvalThresholdMinor BigInt
+  requiredApprovals      Int    @default(1)
+  approvalsCount         Int    @default(0)
+
+  decisionByUserId String?
+  decidedAt        DateTime? @db.Timestamptz(3)
+
+  ledgerTransactionId String? @unique
+  failureReason       String?
+  idempotencyKey      String
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  business          Business           @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  createdBy         User               @relation("PaymentInitiator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  decisionBy        User?              @relation("PaymentDecider", fields: [decisionByUserId], references: [id], onDelete: Restrict)
+  account           Account?           @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  approvals         Approval[]
+  ledgerTransaction LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id], onDelete: Restrict)
+
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, status, createdAt])
+  @@index([businessId, createdByUserId, createdAt])
+}
+
+/**
+ * One human decision on a payment request.
+ * `@@unique([paymentRequestId, actorUserId])` is the database's second line of
+ * defence against a double click; the conditional status transition inside the
+ * approval transaction is the first.
+ */
+model Approval {
+  id               String           @id @default(cuid())
+  businessId       String
+  paymentRequestId String
+  actorUserId      String
+  actorRole        UserRole
+  decision         ApprovalDecision
+  reason           String?
+  createdAt        DateTime         @default(now()) @db.Timestamptz(3)
+
+  business       Business       @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  paymentRequest PaymentRequest @relation(fields: [paymentRequestId], references: [id], onDelete: Restrict)
+  actor          User           @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentRequestId, actorUserId])
+  @@index([businessId, createdAt])
+}
+
+// ==========================================
+// 7. VERIFICATION
 // ==========================================
 
 /**
@@ -627,7 +784,7 @@ model Verification {
 }
 
 // ==========================================
-// 6. WEBHOOK EVENT
+// 8. WEBHOOK EVENT
 // ==========================================
 
 /**
@@ -671,7 +828,7 @@ model WebhookEvent {
 }
 
 // ==========================================
-// 7. AUDIT LOG
+// 9. AUDIT LOG
 // ==========================================
 
 /**

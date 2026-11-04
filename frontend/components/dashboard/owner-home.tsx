@@ -9,9 +9,30 @@ import { businessStatus } from "@/lib/dashboard";
 import Link from "next/link";
 
 const PLACEHOLDERS = [
-  { label: "Balance", verb: "Opens in", module: "Module 3", mark: "01" },
-  { label: "Team", verb: "Managed in", module: "Module 2b", mark: "02" },
-  { label: "Cards", verb: "Issued in", module: "Module 4", mark: "03" },
+  {
+    label: "Team",
+    verb: "Members & roles",
+    href: "/dashboard/team",
+    mark: "01",
+  },
+  {
+    label: "Payments",
+    verb: "Request & track",
+    href: "/dashboard/payments",
+    mark: "02",
+  },
+  {
+    label: "Approvals",
+    verb: "Maker-checker",
+    href: "/dashboard/approvals",
+    mark: "03",
+  },
+  {
+    label: "Cards",
+    verb: "Employee cards",
+    href: "/dashboard/cards",
+    mark: "04",
+  },
 ];
 
 export function OwnerHome({ current }: { current: CurrentBusiness }) {
@@ -40,9 +61,13 @@ export function OwnerHome({ current }: { current: CurrentBusiness }) {
         </div>
       </div>
 
-      <section aria-label="Business account areas" className="mt-7 grid grid-cols-1 gap-px border border-rule bg-rule sm:grid-cols-3">
+      <section aria-label="Business account areas" className="mt-7 grid grid-cols-1 gap-px border border-rule bg-rule sm:grid-cols-2 lg:grid-cols-4">
         {PLACEHOLDERS.map((item) => (
-          <article key={item.label} className="paper-emboss min-h-40 p-5 sm:p-6">
+          <Link
+            key={item.label}
+            href={item.href}
+            className="paper-emboss group min-h-40 p-5 transition-colors hover:bg-ink/[0.02] sm:p-6"
+          >
             <p className="flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.2em] text-ink-muted/75">
               {item.label}
               <span className="text-teal/65">{item.mark}</span>
@@ -50,8 +75,10 @@ export function OwnerHome({ current }: { current: CurrentBusiness }) {
             <p className="mt-8 font-heading text-[1.35rem] font-light leading-none tracking-[-0.02em] text-ink">
               {item.verb}
             </p>
-            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.15em] text-teal">{item.label === "Cards" ? <Link href="/dashboard/cards" className="hover:underline">Open cards</Link> : item.module}</p>
-          </article>
+            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.15em] text-teal">
+              Open
+            </p>
+          </Link>
         ))}
       </section>
 

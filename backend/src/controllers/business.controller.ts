@@ -28,10 +28,12 @@ import {
   USER_ROLE,
 } from "../constants/constants.js";
 import { updateBusinessSchema } from "../validators/business.validator.js";
+import { approvalPolicySchema } from "../validators/team.validator.js";
 import { simulateVerificationSchema } from "../validators/verification.validator.js";
 import { validateOrThrow } from "../validators/validate.js";
 import BusinessService from "../services/business.service.js";
 import VerificationService from "../services/verification.service.js";
+import TeamService from "../services/team.service.js";
 import Logger from "../utils/logger.js";
 import type { UpdateBusinessInput } from "../types/business.types.js";
 import type { SimulatorScenario } from "../integrations/simulator/simulator.provider.js";
@@ -50,6 +52,9 @@ export default class BusinessController extends BaseController {
 
   @inject(TYPES.VerificationService)
   verificationService!: VerificationService;
+
+  @inject(TYPES.TeamService)
+  teamService!: TeamService;
 
   @inject(TYPES.Logger)
   logger!: Logger;
@@ -150,6 +155,42 @@ export default class BusinessController extends BaseController {
       );
 
       return this.success(res, { verification }, STATUS_CODE.OK);
+    } catch (error) {
+      return this.handleError(res, error);
+    }
+  }
+
+  @httpGet("/current/approval-policy", authMiddleware(BUSINESS_ADMIN_ROLES))
+  async approvalPolicy(req: Request, res: Response) {
+    try {
+      return this.success(
+        res,
+        await this.teamService.getApprovalPolicy(
+          req.user!.businessId,
+          req.user!.role,
+        ),
+        STATUS_CODE.OK,
+      );
+    } catch (error) {
+      return this.handleError(res, error);
+    }
+  }
+
+  @httpPatch("/current/approval-policy", authMiddleware(USER_ROLE.OWNER))
+  async updateApprovalPolicy(req: Request, res: Response) {
+    try {
+      const body = validateOrThrow(approvalPolicySchema, req.body);
+
+      return this.success(
+        res,
+        await this.teamService.updateApprovalPolicy(
+          req.user!.userId,
+          req.user!.businessId,
+          req.user!.role,
+          body,
+        ),
+        STATUS_CODE.OK,
+      );
     } catch (error) {
       return this.handleError(res, error);
     }
