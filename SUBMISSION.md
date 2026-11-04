@@ -179,3 +179,15 @@ Module 5 smoke matrix    111 passed, 0 failed
 The repository's smoke script is retained as a regression checker. It is not a
 provider simulator presented as live evidence; its output is local verification
 of authorization, tenancy, idempotency and ledger behavior.
+
+## Links 
+
+| Item | Link |
+| --- | --- |
+| Repository | <https://github.com/1129Aliasgar/neobank> |
+| README | <https://github.com/1129Aliasgar/neobank/blob/main/README.md> |
+| Submission rationale | <https://github.com/1129Aliasgar/neobank/blob/main/SUBMISSION.md> |
+| Timestamped decision log | <https://github.com/1129Aliasgar/neobank/blob/main/decision-log.md> |
+| Frontend | <https://neo-bank-corgi.netlify.app> |
+| Video | <> |
+| Evidence pack | <> |

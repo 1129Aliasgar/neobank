@@ -74,3 +74,24 @@ SMOKE_TEAM_FLOW=1 npm run smoke
 ```
 
 The second command mutates demo rows; run `npm run db:seed` afterward to restore the seeded state.
+
+### Simple flow diagram
+
+```mermaid
+flowchart TD
+    U[Owner or employee signs in] --> R[Backend checks role and business]
+    R --> KYB[Module 1: Didit Sandbox KYB]
+    KYB -->|verified| AC[Module 3: USD account and ledger]
+    AC --> C[Module 4: Lithic Sandbox virtual card]
+    C --> AUTH[Card authorization]
+    AUTH --> HOLD[Create NeoBank hold; available balance decreases]
+    HOLD --> SETTLE[Later clearing or capture]
+    SETTLE --> POST[Balanced ledger journal is posted]
+    R --> TEAM[Module 5: Team and payment request]
+    TEAM --> APPROVAL[Different owner/admin approves]
+    APPROVAL --> SIM[Labelled simulated payment rail]
+    SIM --> POST
+    POST --> DASH[Module 2: Role-aware dashboard]
+    POST -. future, not built .-> M6[Module 6: Statements and reconciliation]
+    POST -. future, not built .-> M7[Module 7: Restricted MCP agent tools]
+```
