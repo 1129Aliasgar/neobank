@@ -257,5 +257,15 @@ when a choice is made, not reconstructed at the end.
 
 ## 2026-11-04T08:12Z - Manual reversal is operations-only
 
-- 'OPERATIONS' is the only role allowed to reverse a ledger transaction; owners and admins cannot bypass maker-checker.
+- `OPERATIONS` is the only role allowed to reverse a ledger transaction; owners and admins cannot bypass maker-checker.
 - Route, service guard and audit were aligned so hiding the button is not the control.
+
+## 2026-11-04T09:10Z - Module 6 is the last must-build module
+
+- `feature5.md` covers statements, reconciliation, operations and MCP because `plan1.md` groups them and the agent write tool needs Module 5's queue.
+- Module 5 (`feature4.md`) is still the immediate build; Module 6 reuses `occurredAt` as value date and `postedAt` as booking date.
+
+## 2026-11-04T09:15Z - Tunnel-safe API client
+
+- Free ngrok domains return an HTML warning for browser GETs, so the shared axios client sends ngrok-skip-browser-warning.
+- Harmless on a real host; without it login works but every dashboard read fails to parse.

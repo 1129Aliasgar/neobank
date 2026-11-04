@@ -99,6 +99,14 @@ export const api: AxiosInstance = axios.create({
   timeout: 15_000,
   headers: {
     Accept: "application/json",
+    /*
+     * Free ngrok domains answer browser GETs with an HTML warning page unless
+     * this header is present. Without it, login (POST) works but every dashboard
+     * GET comes back as `text/plain` and cannot be parsed as JSON. The header is
+     * harmless on a real API host, so it stays in the shared client rather than
+     * being conditioned on the base URL.
+     */
+    "ngrok-skip-browser-warning": "true",
   },
 });
 
