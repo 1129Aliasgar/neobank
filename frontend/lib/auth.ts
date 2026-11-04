@@ -11,11 +11,7 @@ import { api, tokenStore, type ApiSuccess } from "./api";
 export type UserRole = "OWNER" | "ADMIN" | "EMPLOYEE" | "OPERATIONS";
 
 export type BusinessStatus =
-  | "PENDING_VERIFICATION"
-  | "ACTIVE"
-  | "REJECTED"
-  | "SUSPENDED"
-  | "CLOSED";
+  "PENDING_VERIFICATION" | "ACTIVE" | "REJECTED" | "SUSPENDED" | "CLOSED";
 
 export type OnboardingStep =
   | "COMPLETE_PROFILE"
@@ -101,8 +97,7 @@ export const authApi = {
 
   /** Authoritative session read; `/auth/profile` is kept as an alias. */
   async session(): Promise<SessionResult> {
-    const { data } =
-      await api.get<ApiSuccess<SessionResult>>("/auth/me");
+    const { data } = await api.get<ApiSuccess<SessionResult>>("/auth/me");
 
     return data.data;
   },

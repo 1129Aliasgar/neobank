@@ -62,9 +62,10 @@ export const cardsApi = {
   },
 
   async mine() {
-    const { data } = await api.get<
-      ApiSuccess<{ cards: CardView[]; authorizations: CardAuthorization[] }>
-    >("/cards/mine");
+    const { data } =
+      await api.get<
+        ApiSuccess<{ cards: CardView[]; authorizations: CardAuthorization[] }>
+      >("/cards/mine");
     return data.data;
   },
 

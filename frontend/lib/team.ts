@@ -122,9 +122,9 @@ export const teamApi = {
   },
 
   async revoke(id: string): Promise<TeamInvitation> {
-    const { data } = await api.delete<ApiSuccess<{ invitation: TeamInvitation }>>(
-      `/team/invitations/${id}`,
-    );
+    const { data } = await api.delete<
+      ApiSuccess<{ invitation: TeamInvitation }>
+    >(`/team/invitations/${id}`);
     return data.data.invitation;
   },
 

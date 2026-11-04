@@ -108,11 +108,7 @@ export interface PaymentCreateResult {
 }
 
 export type PaymentStatusTone =
-  | "neutral"
-  | "progress"
-  | "positive"
-  | "negative"
-  | "attention";
+  "neutral" | "progress" | "positive" | "negative" | "attention";
 
 const PAYMENT_STATUS: Record<
   PaymentRequestStatus,
@@ -140,11 +136,13 @@ export function paymentStatusLabel(status: PaymentRequestStatus): string {
 }
 
 export const paymentsApi = {
-  async list(query: {
-    status?: PaymentRequestStatus;
-    limit?: number;
-    cursor?: string;
-  } = {}): Promise<PaymentList> {
+  async list(
+    query: {
+      status?: PaymentRequestStatus;
+      limit?: number;
+      cursor?: string;
+    } = {},
+  ): Promise<PaymentList> {
     const { data } = await api.get<ApiSuccess<PaymentList>>("/payments", {
       params: query,
     });
@@ -175,10 +173,7 @@ export const paymentsApi = {
     return data.data.request;
   },
 
-  async approve(
-    id: string,
-    reason?: string,
-  ): Promise<PaymentRequestView> {
+  async approve(id: string, reason?: string): Promise<PaymentRequestView> {
     const { data } = await api.post<
       ApiSuccess<{ request: PaymentRequestView }>
     >(`/payments/${id}/approve`, reason ? { reason } : {});
@@ -200,9 +195,10 @@ export const paymentsApi = {
   },
 
   async queue(): Promise<{ requests: PaymentSummary[]; count: number }> {
-    const { data } = await api.get<
-      ApiSuccess<{ requests: PaymentSummary[]; count: number }>
-    >("/approvals");
+    const { data } =
+      await api.get<ApiSuccess<{ requests: PaymentSummary[]; count: number }>>(
+        "/approvals",
+      );
     return data.data;
   },
 };

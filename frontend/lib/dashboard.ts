@@ -137,9 +137,7 @@ export function navForRole(role: UserRole, pendingApprovals = 0): NavItem[] {
     }
 
     return OPERATOR_NAV.map((item) =>
-      item.key === "approvals"
-        ? { ...item, badge: pendingApprovals }
-        : item,
+      item.key === "approvals" ? { ...item, badge: pendingApprovals } : item,
     );
   }
 
@@ -164,11 +162,7 @@ export function roleLabel(role: UserRole): string {
 }
 
 export type StatusTone =
-  | "neutral"
-  | "progress"
-  | "positive"
-  | "negative"
-  | "attention";
+  "neutral" | "progress" | "positive" | "negative" | "attention";
 
 export function roleTone(role: UserRole): StatusTone {
   switch (role) {
@@ -254,7 +248,10 @@ export function sectionForPath(pathname: string): string {
     return "Cards";
   }
 
-  if (pathname === "/dashboard/card" || pathname.startsWith("/dashboard/card/")) {
+  if (
+    pathname === "/dashboard/card" ||
+    pathname.startsWith("/dashboard/card/")
+  ) {
     return "My card";
   }
 

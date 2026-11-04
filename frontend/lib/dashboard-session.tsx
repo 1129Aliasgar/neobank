@@ -83,9 +83,7 @@ export function DashboardSessionProvider({
   }, [router]);
 
   return (
-    <DashboardSessionContext.Provider
-      value={{ current, user, identityError }}
-    >
+    <DashboardSessionContext.Provider value={{ current, user, identityError }}>
       {children}
     </DashboardSessionContext.Provider>
   );

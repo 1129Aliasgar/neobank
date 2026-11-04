@@ -8,7 +8,8 @@
 import type { BusinessStatus } from "./auth";
 import type { VerificationStatus } from "./business";
 
-export type StatusTone = "neutral" | "progress" | "positive" | "negative" | "attention";
+export type StatusTone =
+  "neutral" | "progress" | "positive" | "negative" | "attention";
 
 export function verificationLabel(status: VerificationStatus): string {
   switch (status) {

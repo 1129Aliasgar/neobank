@@ -45,18 +45,15 @@ export const verificationApi = {
   },
 
   async latest(): Promise<VerificationSummary | null> {
-    const { data } =
-      await api.get<ApiSuccess<{ verification: VerificationSummary | null }>>(
-        "/businesses/current/verification",
-      );
+    const { data } = await api.get<
+      ApiSuccess<{ verification: VerificationSummary | null }>
+    >("/businesses/current/verification");
 
     return data.data.verification;
   },
 
   /** Sandbox only; the API returns 403 when the real provider is active. */
-  async simulate(
-    scenario: SimulatorScenario,
-  ): Promise<VerificationSummary> {
+  async simulate(scenario: SimulatorScenario): Promise<VerificationSummary> {
     const { data } = await api.post<
       ApiSuccess<{ verification: VerificationSummary }>
     >("/businesses/current/verification/simulate", { scenario });

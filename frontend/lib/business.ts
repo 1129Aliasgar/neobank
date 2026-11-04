@@ -6,24 +6,13 @@
  */
 
 import { api, type ApiSuccess } from "./api";
-import type {
-  BusinessStatus,
-  OnboardingStep,
-  UserRole,
-} from "./auth";
+import type { BusinessStatus, OnboardingStep, UserRole } from "./auth";
 
 export type BusinessType =
-  | "LLC"
-  | "CORPORATION"
-  | "PARTNERSHIP"
-  | "SOLE_PROPRIETORSHIP";
+  "LLC" | "CORPORATION" | "PARTNERSHIP" | "SOLE_PROPRIETORSHIP";
 
 export type VerificationStatus =
-  | "NOT_STARTED"
-  | "PENDING"
-  | "APPROVED"
-  | "REJECTED"
-  | "REVIEW";
+  "NOT_STARTED" | "PENDING" | "APPROVED" | "REJECTED" | "REVIEW";
 
 export type VerificationEnvironment = "SANDBOX" | "LIVE";
 
