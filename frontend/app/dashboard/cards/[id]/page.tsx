@@ -56,6 +56,7 @@ function CardDetail({ current }: { current: CurrentBusiness }) {
   const [busy, setBusy] = useState(false);
   const [amount, setAmount] = useState("18.42");
   const [descriptor, setDescriptor] = useState("NEOBANK SANDBOX CAFE");
+  const [settleAmount, setSettleAmount] = useState("");
 
   const refresh = useCallback(async () => {
     const [nextCard, nextActivity] = await Promise.all([
@@ -131,10 +132,24 @@ function CardDetail({ current }: { current: CurrentBusiness }) {
     setError(null);
     setNotice(null);
 
+    let requested = remaining.toString();
+
+    if (settleAmount.trim()) {
+      try {
+        requested = parseDollarsToMinor(settleAmount.trim());
+      } catch (cause) {
+        setError(
+          cause instanceof Error ? cause.message : "Enter a valid settle amount.",
+        );
+        setBusy(false);
+        return;
+      }
+    }
+
     try {
       const result = await cardsApi.simulateClear(card.id, {
         transactionToken: row.providerAuthorizationId,
-        amountMinor: remaining.toString(),
+        amountMinor: requested,
       });
       setNotice(
         `Clearing accepted · webhook ${result.outcome} · ledger capture posted.`,
@@ -218,6 +233,9 @@ function CardDetail({ current }: { current: CurrentBusiness }) {
               ? `${String(card.expMonth).padStart(2, "0")}/${String(card.expYear).slice(-2)}`
               : "—"}
           </p>
+          <p className="mt-2 break-all font-mono text-[10px] tracking-[0.08em] text-ink-muted/80">
+            Lithic card {card.providerCardId}
+          </p>
         </div>
         <span className="border border-rule px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.12em] text-ink-muted">
           {card.status} · Lithic Sandbox
@@ -249,7 +267,9 @@ function CardDetail({ current }: { current: CurrentBusiness }) {
               <p className="mt-2 max-w-xl text-[12px] leading-relaxed text-ink-muted">
                 Calls Lithic&apos;s Sandbox authorization endpoint, then signs
                 and delivers a webhook through the same ingress a live event
-                uses. Not a production payment.
+                uses. Not a production payment. Leave the settle amount blank
+                to release the remaining hold, or enter a different amount to
+                demonstrate a tip/fuel-style over-capture.
               </p>
             </div>
             <div className="flex flex-wrap items-end gap-2">
@@ -270,6 +290,16 @@ function CardDetail({ current }: { current: CurrentBusiness }) {
                   className="w-52 border border-rule bg-paper px-3 py-2 text-ink"
                 />
               </label>
+              <label className="grid gap-1 text-[11px] text-ink-muted">
+                Settle amount (USD)
+                <input
+                  value={settleAmount}
+                  onChange={(event) => setSettleAmount(event.target.value)}
+                  placeholder="remaining"
+                  inputMode="decimal"
+                  className="w-32 border border-rule bg-paper px-3 py-2 text-ink placeholder:text-ink-muted/50"
+                />
+              </label>
               <button
                 onClick={() => void authorize()}
                 disabled={busy || card.status !== "ACTIVE"}
@@ -288,6 +318,15 @@ function CardDetail({ current }: { current: CurrentBusiness }) {
           {activity.map((row) => {
             const remaining =
               BigInt(row.amountMinor) - BigInt(row.capturedMinor);
+            let requested = remaining.toString();
+
+            if (settleAmount.trim()) {
+              try {
+                requested = parseDollarsToMinor(settleAmount.trim());
+              } catch {
+                /* Keep the row's remaining amount until the input is valid. */
+              }
+            }
 
             return (
               <div key={row.id} className="border-b border-rule py-4">
@@ -344,7 +383,7 @@ function CardDetail({ current }: { current: CurrentBusiness }) {
                       disabled={busy}
                       className="border border-rule px-3 py-2 font-mono text-[9px] uppercase tracking-[0.1em] text-ink-muted hover:text-ink disabled:opacity-40"
                     >
-                      Settle {formatMinor(remaining.toString(), row.currency)}
+                      Settle {formatMinor(requested, row.currency)}
                     </button>
                     <button
                       onClick={() => void voidAuthorization(row)}

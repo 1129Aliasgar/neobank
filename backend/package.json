@@ -22,7 +22,9 @@
     "smoke": "node scripts/smoke.mjs",
     "db:studio": "prisma studio",
     "db:push": "prisma db push",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset",
+    "db:clean": "tsx scripts/clean-db.ts",
+    "db:reset:demo": "npm run db:clean && npm run db:migrate:deploy && npm run db:seed"
   },
   "keywords": [],
   "author": "",

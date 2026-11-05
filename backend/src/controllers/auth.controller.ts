@@ -4,8 +4,7 @@
  * Routes:
  *   POST /api/v1/auth/register
  *   POST /api/v1/auth/login
- *   GET  /api/v1/auth/profile   (Bearer token or httpOnly cookie)
- *   GET  /api/v1/auth/me        (alias for /profile)
+ *   GET  /api/v1/auth/me        (Bearer token or httpOnly cookie)
  *   POST /api/v1/auth/logout
  *
  * The token cookie is written through `utils/authCookie`, so production gets
@@ -80,12 +79,7 @@ export default class AuthController extends BaseController {
     }
   }
 
-  @httpGet("/profile", authMiddleware(ALL_USER_ROLES))
-  async profile(req: Request, res: Response) {
-    return this.currentSession(req, res);
-  }
-
-  /** HLD name for the same read; kept as an alias so both clients work. */
+  /** The signed-in user and their onboarding state. */
   @httpGet("/me", authMiddleware(ALL_USER_ROLES))
   async me(req: Request, res: Response) {
     return this.currentSession(req, res);

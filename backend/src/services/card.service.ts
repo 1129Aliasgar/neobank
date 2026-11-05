@@ -273,6 +273,8 @@ export default class CardService {
     return {
       id: row.id,
       provider: row.provider,
+      providerCardId: row.providerCardId,
+      providerCardholderId: row.cardholder?.providerCardholderId ?? null,
       status: row.status,
       type: row.type,
       currency: row.currency,

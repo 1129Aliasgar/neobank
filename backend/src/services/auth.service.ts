@@ -224,14 +224,14 @@ export default class AuthService {
   }
 
   async profile(userData: ProfileUserInput) {
-    this.logger.info("requesting profile", { userId: userData.userId });
+    this.logger.info("requesting session", { userId: userData.userId });
 
     const isBlacklisted = await this.authRepository.isTokenBlacklisted(
       userData.token,
     );
 
     if (isBlacklisted) {
-      this.logger.warn("profile rejected: token is blacklisted", {
+      this.logger.warn("session rejected: token is blacklisted", {
         userId: userData.userId,
       });
 
@@ -244,7 +244,7 @@ export default class AuthService {
     );
 
     if (!membership) {
-      this.logger.warn("profile rejected: no active membership", {
+      this.logger.warn("session rejected: no active membership", {
         userId: userData.userId,
         businessId: userData.businessId,
       });
@@ -294,7 +294,7 @@ export default class AuthService {
     return result;
   }
 
-  /** The signed-in shape, shared by register, login and profile. */
+  /** The signed-in shape, shared by register, login and the session read. */
   private toProfile(
     user: {
       id: string;

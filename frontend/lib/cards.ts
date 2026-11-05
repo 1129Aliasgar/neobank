@@ -3,6 +3,8 @@ import { api, type ApiSuccess } from "./api";
 export interface CardView {
   id: string;
   provider: string;
+  providerCardId: string;
+  providerCardholderId: string | null;
   status: string;
   type: string;
   currency: string;
