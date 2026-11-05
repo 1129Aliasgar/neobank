@@ -96,7 +96,7 @@ this submission does not claim it. Card creation is real; the provider card id i
 shown on the card detail page so any card can be matched in the Lithic dashboard
 (Issuing → Cards, Sandbox mode).
 
-screenshots are shared as a read-only Google Drive folder:
+The same screenshots are also shared as a read-only Google Drive folder:
 
 ```text
 https://drive.google.com/drive/folders/18xbK7XDYBYcwAXz1DAJs7adqY85XZpT9?usp=sharing
