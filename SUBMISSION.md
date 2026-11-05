@@ -96,12 +96,10 @@ this submission does not claim it. Card creation is real; the provider card id i
 shown on the card detail page so any card can be matched in the Lithic dashboard
 (Issuing → Cards, Sandbox mode).
 
-If the repository is private, Corgi reviewers need the GitHub invitation
-(`@AlexanderReinicke`, `@mojafa`) to open that folder. Alternatively the same
 screenshots are shared as a read-only Google Drive folder:
 
 ```text
-[FILL IN: Google Drive view-only shared folder link]
+https://drive.google.com/drive/folders/18xbK7XDYBYcwAXz1DAJs7adqY85XZpT9?usp=sharing
 ```
 
 ---
