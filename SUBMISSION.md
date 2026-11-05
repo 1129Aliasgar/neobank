@@ -50,7 +50,7 @@ Password: NeoBank@123
 | `owner@neobank.dev` | OWNER | NeoBank Demo Co (ACTIVE) | Full workspace, team, cards, approvals |
 | `admin@neobank.dev` | ADMIN | NeoBank Demo Co (ACTIVE) | Operator workspace without owner-only controls |
 | `employee@neobank.dev` | EMPLOYEE | NeoBank Demo Co (ACTIVE) | Employee dashboard, own card, own payments |
-| `ops@neobank.dev` | OPERATIONS | NeoBank Demo Co (ACTIVE) | Ledger integrity / operations surface |
+| `ops@neobank.dev` | OPERATIONS | NeoBank Demo Co (ACTIVE) | API-only ledger integrity / reversal role (no frontend operations page) |
 | `second@neobank.dev` | OWNER | NeoBank Second Co (ACTIVE) | Tenant isolation check |
 | `pending@neobank.dev` | OWNER | NeoBank Pending Co (PENDING_VERIFICATION) | Onboarding/KYB walkthrough |
 
@@ -627,33 +627,45 @@ POST   /api/v1/auth/logout
 GET    /api/v1/businesses/current
 PATCH  /api/v1/businesses/current
 GET    /api/v1/businesses/current/verification
+GET    /api/v1/businesses/current/verification/history
 POST   /api/v1/businesses/current/verification
+POST   /api/v1/businesses/current/verification/simulate
 GET    /api/v1/businesses/current/approval-policy
 PATCH  /api/v1/businesses/current/approval-policy
 
 GET    /api/v1/accounts/current
+POST   /api/v1/accounts/current/deposits
 GET    /api/v1/accounts/current/transactions
 GET    /api/v1/accounts/current/transactions/{id}
+POST   /api/v1/accounts/current/holds
+POST   /api/v1/accounts/current/holds/{id}/capture
+POST   /api/v1/accounts/current/holds/{id}/release
 GET    /api/v1/operations/ledger/integrity
+POST   /api/v1/operations/ledger/transactions/{id}/reverse
 
 GET    /api/v1/cards
 GET    /api/v1/cards/mine
 GET    /api/v1/cards/eligible-employees
 POST   /api/v1/cards
 GET    /api/v1/cards/{id}
+POST   /api/v1/cards/cardholders
 POST   /api/v1/cards/{id}/freeze
 POST   /api/v1/cards/{id}/unfreeze
 POST   /api/v1/cards/{id}/cancel
+GET    /api/v1/cards/{id}/authorizations
 POST   /api/v1/cards/{id}/simulate/authorize
 POST   /api/v1/cards/{id}/simulate/clear
+POST   /api/v1/cards/{id}/simulate/void
 
 GET    /api/v1/team
 POST   /api/v1/team/invitations
 GET    /api/v1/team/invitations/{token}
 POST   /api/v1/team/invitations/{token}/accept
-POST   /api/v1/team/invitations/{id}/revoke
-PATCH  /api/v1/team/members/{id}/role
-PATCH  /api/v1/team/members/{id}/status
+POST   /api/v1/team/invitations/{token}/register
+POST   /api/v1/team/invitations/{id}/resend
+DELETE /api/v1/team/invitations/{id}
+PATCH  /api/v1/team/members/{id}
+DELETE /api/v1/team/members/{id}
 
 GET    /api/v1/payments
 POST   /api/v1/payments
@@ -662,6 +674,9 @@ POST   /api/v1/payments/{id}/approve
 POST   /api/v1/payments/{id}/reject
 POST   /api/v1/payments/{id}/cancel
 GET    /api/v1/approvals
+
+POST   /api/v1/webhooks/didit
+POST   /api/v1/webhooks/lithic
 ```
 
 `/auth/me` is the only session-read route. `/auth/profile` was removed because it

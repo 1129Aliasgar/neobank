@@ -391,12 +391,13 @@ This is why a card authorization can reduce "available" without changing the
 ### 6.6 Likely questions and answers
 
 **Q: What happens if I click "Pay" twice?**
-For payment requests, the API derives an idempotency key from the client request
-id and the request body. The second identical request returns the same payment
-request instead of creating another one. If the user changes the amount, that is
-a different instruction and a different key, so a second request is created —
-which is correct, but each request still needs approval. The UI also disables
-the button while the request is in flight.
+The payment form creates one idempotency key per submit and disables the button
+while the request is in flight. If the same key is retried (network retry,
+double-click, browser retry), the API returns the same payment request instead of
+creating another one. A new submit gets a new key and creates a new request, even
+for the same amount; that is correct, because it is a separate instruction. Each
+request still needs approval. The approval step is separately protected: a
+double approval returns `409` and posts only one ledger payment.
 
 **Q: What if two people approve the same payment at the same time?**
 Approval runs in a database transaction and locks the request row
@@ -484,10 +485,10 @@ This is the most important card concept in the assignment.
 ```
 1. Merchant requests $50.00
    -> Lithic sends an authorization event
-   -> NeoBank approves if the card is active and available >= $50
-   -> NeoBank creates a $50 hold
+   -> NeoBank applies its policy: card active and available >= $50
+   -> if yes: create a $50 hold; if no: record a decline, no hold
    -> Ledger balance: unchanged
-   -> Available balance: -$50
+   -> Available balance: -$50 (when approved)
 
 2. Merchant settles $73.40 later
    -> Lithic sends a clearing event
@@ -501,6 +502,13 @@ reviewer can see that a settlement is not a copy of the authorization.
 
 The card detail page now has a **Settle amount** field for exactly this. Leave it
 blank to settle the remaining hold; type `73.40` to demonstrate an over-capture.
+
+**Sandbox note:** in the demo, Lithic's sandbox simulator produces the
+provider-side authorization, and NeoBank then ingests a signed event and applies
+its own ledger policy. A production card program would also return the
+approve/decline decision to the card network inside the authorization window.
+The ledger policy exercised here is the same; the network round-trip is not
+claimed.
 
 ### 7.4 Why the cards may not appear in the Lithic dashboard
 
@@ -680,15 +688,18 @@ accidentally auto-approving everything.
 - Approval and ledger posting are in the same database transaction.
 - A unique `(paymentRequestId, actorUserId)` approval row prevents duplicates.
 - Rejection and cancellation are terminal and post no money.
-- A payment request uses an idempotency key derived from the client request id
-  and the body, so a double-click does not create two requests.
+- A payment request uses the `Idempotency-Key` supplied by the client. The web
+  form generates one key per submit and keeps it across retries, so a
+  double-click does not create two requests. A new submit gets a new key.
 
 ### 8.5 Likely questions and answers
 
 **Q: What if I click "Pay" twice?**
-The second identical creation returns the existing request. The approval step
-still needs a human, and a double approval returns `409`. No second ledger
-payment is posted.
+The web form generates one idempotency key per submit and disables the button
+while the request is in flight. A retry with the same key returns the existing
+request. A new submit creates a new request (a separate instruction), but each
+request still needs a human, and a double approval returns `409`. No second
+ledger payment is posted for one approved request.
 
 **Q: What if the same person tries to approve their own request?**
 The service checks `createdByUserId === actorUserId` before anything else and
