@@ -272,6 +272,11 @@ Demo password for all accounts: NeoBank@123
 - Cards is empty until the owner issues one.
 - Payments shows one pending $5,000 request and one rejected $1,200 request.
 
+The final reset was executed on **2026-11-05** and verified directly against the
+database: **6 users, 3 businesses, 6 ledger transactions, 12 ledger entries,
+2 payment requests, 0 cards**. The production smoke tests were run before this
+reset; the final database is the documented clean seed.
+
 ---
 
 ## 7. Five-minute video walkthrough
