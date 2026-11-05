@@ -293,8 +293,12 @@ payment approval.
 - Have a phone ready for the Didit QR (Didit's business KYB flow is mobile-only
   in this configuration).
 - Do not issue a card before recording; issue it live.
+- If a take fails, run the reset again before retrying. A half-approved payment
+  or a settled card cannot be "undone" from the UI; the reset is the clean path.
 - Use **$50.00** authorization and **$73.40** settlement for the card segment.
-- Use **$5,000.00** and beneficiary **Acme Supplies** for the payment segment.
+- Use **$2,500.00** and beneficiary **Acme Supplies** for the payment segment
+  (the seed already has a separate $5,000 pending request, so the new amount is
+  easy to identify in the queue).
 
 ### 0:00–0:25 — Opening
 
@@ -400,11 +404,17 @@ role-change and disable controls are owner-only.
 4. In the sandbox simulator, set merchant **NEOBANK SANDBOX CAFE** and amount
    **$50.00**. Run the authorization.
 5. Show that available balance drops by $50 while ledger balance is unchanged.
-6. Set the **Settle amount** to **$73.40** and clear the authorization.
-7. Show that the ledger now drops by $73.40, the hold is released, and the extra
+6. Say: *"In a real deployment the employee taps the card at the merchant. Here
+   the owner runs the sandbox simulator, because the employee must not be able to
+   fake a merchant charge. The event still goes through the signed webhook path."*
+7. Set the **Settle amount** to **$73.40** and clear the authorization.
+8. Show that the ledger now drops by $73.40, the hold is released, and the extra
    $23.40 came from the wallet.
-8. Say: *"This is the tip/fuel case: authorization reserves $50, the merchant
+9. Say: *"This is the tip/fuel case: authorization reserves $50, the merchant
    settles $73.40. The ledger posts the real amount, not the authorization."*
+10. **Optional:** switch to the employee profile and refresh **My card**. The same
+    authorization/settlement is visible there, but the employee still cannot see
+    the business balance or the team list.
 
 **Optional:** freeze the card and show that a new authorization is declined.
 
@@ -417,7 +427,7 @@ role-change and disable controls are owner-only.
 ```text
 Beneficiary: Acme Supplies
 Reference:   INV-2001
-Amount:      $5,000.00
+Amount:      $2,500.00
 Memo:        Office furniture
 ```
 
@@ -481,7 +491,8 @@ cannot approve their own request."*
 
 ### E. Payment
 
-1. Employee → **Payments** → create $5,000 to Acme Supplies.
+1. Employee → **Payments** → create $2,500 to Acme Supplies (reference
+   `INV-2001`, memo "Office furniture").
 2. Owner → **Approvals** → approve.
 3. Show status Completed and the new ledger transaction.
 4. Optional: double-approve to show `409`; owner creates own request to show
