@@ -131,8 +131,9 @@ when a choice is made, not reconstructed at the end.
   roles, so maker-checker and OPERATIONS views can be exercised immediately.
 - `Verification` is a row per attempt, not fields on `Business`: a rejected
   applicant re-submits, and the earlier decision has to stay auditable.
-  `providerApplicantId` is unique because it is the Sumsub webhook idempotency
-  key.
+  `providerApplicantId` is unique because it anchors provider webhook events back
+  to one verification attempt. The KYB provider was Sumsub when this was written
+  and became Didit at 10:40Z; the constraint is provider-independent.
 - The local database was reset (user-approved) and the first migration
   (`20261103093000_init`) was generated and applied. From here schema changes go
   through `prisma migrate`, not `db push`, so deployments have history.
@@ -260,9 +261,9 @@ when a choice is made, not reconstructed at the end.
 - `OPERATIONS` is the only role allowed to reverse a ledger transaction; owners and admins cannot bypass maker-checker.
 - Route, service guard and audit were aligned so hiding the button is not the control.
 
-## 2026-11-04T09:10Z - Module 6 is the last must-build module
+## 2026-11-04T09:10Z - Modules 6 and 7 are the remaining scope
 
-- `feature5.md` covers statements, reconciliation, operations and MCP because `plan1.md` groups them and the agent write tool needs Module 5's queue.
+- Public numbering: **Module 6** is statements, reconciliation and operations; **Module 7** is the MCP agent surface. `feature5.md` keeps both in one planning document because `plan1.md` groups them and the agent write tool needs Module 5's queue. The document grouping does not merge the modules.
 - Module 5 (`feature4.md`) is still the immediate build; Module 6 reuses `occurredAt` as value date and `postedAt` as booking date.
 
 ## 2026-11-04T09:15Z - Tunnel-safe API client
@@ -289,3 +290,10 @@ when a choice is made, not reconstructed at the end.
 - Added a second `ACTIVE` tenant (`NeoBank Second Co`) so cross-tenant reads are proven with a live `404`, not an inactive-business `409`.
 - The demo tenant seeds one pending `$5,000` request and one rejected request; the approval threshold and ledger stay idempotent across re-seeds.
 - The smoke matrix uses `SMOKE_TEAM_FLOW=1` for the mutating invitation/maker-checker/threshold tests and restores the threshold afterwards.
+
+## 2026-11-05 - Submission terminology and a stale vendor reference
+
+- Module numbering is consistent across this log, `SUBMISSION.md` and the submission email: **Module 6** is statements, reconciliation and operations; **Module 7** is the MCP agent surface. `feature5.md` is one planning document covering both, not a single merged module.
+- Neither Module 6 nor Module 7 was built before freeze; both are listed as "Not built" wherever they appear.
+- Corrected the 2026-11-03T09:20Z entry that called `providerApplicantId` a "Sumsub webhook idempotency key". The KYB provider is Didit (switched at 2026-11-03T10:40Z); the unique field anchors provider webhook events to one verification attempt and is vendor-independent. `SUMSUB` remains in the enum only so historical rows stay valid.
+

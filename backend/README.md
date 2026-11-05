@@ -26,7 +26,7 @@ these models.
 | `User`           | Person + credentials. No role, no financial data.                    |
 | `Business`       | The customer entity that will own accounts, cards and money.         |
 | `BusinessMember` | `(business, user)` join **and the only place a role lives**.         |
-| `Verification`   | KYC/KYB attempt (Sumsub applicant, status, provider payload subset). |
+| `Verification`   | KYC/KYB attempt (Didit session, status, provider payload subset).           |
 | `BlacklistToken` | Logged-out JWTs kept until their own `exp`.                           |
 
 Registration writes the user, the business and the `OWNER` membership in one
