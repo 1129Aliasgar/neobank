@@ -86,9 +86,8 @@ Password: NeoBank@123
 | 6 — Statements/reconciliation/operations | Period statements, provider-file matching, breaks, bitemporal corrections, ops queues | **Not built** |
 | 7 — MCP agent surface | Three reads + one safe write into the human approval queue | **Not built** |
 
-Modules 6 and 7 are described in [`explanation.md`](explanation.md) and
-[`planning/feature5.md`](planning/feature5.md). They are not presented as
-working features.
+Modules 6 and 7 are described in [`explanation.md`](explanation.md). They are
+not presented as working features.
 
 ### What is simulated
 
@@ -530,8 +529,8 @@ What is built (Modules 1–5):
   cancel, and exactly one ledger post per approved payment.
 
 What is not built: Modules 6 (statements/reconciliation/operations) and 7 (MCP
-agent surface). They are scoped in planning/feature5.md and stated honestly in
-the submission.
+agent surface). They are scoped in the local planning notes and stated honestly
+in the submission.
 
 Honest boundaries:
 - Outbound payments are a clearly labelled simulator, not ACH/wire.

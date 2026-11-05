@@ -95,7 +95,7 @@ export const authApi = {
     return data.data;
   },
 
-  /** Authoritative session read; `/auth/profile` is kept as an alias. */
+  /** Authoritative session read. */
   async session(): Promise<SessionResult> {
     const { data } = await api.get<ApiSuccess<SessionResult>>("/auth/me");
 

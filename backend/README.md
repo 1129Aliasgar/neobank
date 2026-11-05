@@ -100,7 +100,7 @@ Base path: `/api/v1`. Every response is `{ data, success }` on success and
 | GET    | `/health`         | —    | `{ status: "ok" }`                              |
 | POST   | `/auth/register`  | —    | `{ username, email, password, businessName?, country? }` → creates business + OWNER membership |
 | POST   | `/auth/login`     | —    | `{ email, password }` → `{ user, token }`       |
-| GET    | `/auth/profile`   | Yes  | current user, role and business                 |
+| GET    | `/auth/me`        | Yes  | current user, role and business                 |
 | POST   | `/auth/logout`    | Yes  | blacklists the presented JWT and clears cookie  |
 
 Auth accepts either `Authorization: Bearer <token>` or the `token` httpOnly
@@ -136,7 +136,7 @@ curl -s http://localhost:5000/api/v1/auth/login \
   -H 'content-type: application/json' \
   -d '{"email":"owner@neobank.dev","password":"NeoBank@123"}'
 
-curl -s http://localhost:5000/api/v1/auth/profile \
+curl -s http://localhost:5000/api/v1/auth/me \
   -H "authorization: Bearer <token>"
 ```
 

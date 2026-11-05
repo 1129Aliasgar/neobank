@@ -764,7 +764,8 @@ Planned scope:
 
 Why it is not built: Modules 1–5 establish the money system and the provider
 events. Reconciliation is a large surface, and a shallow version would be worse
-than an honest boundary. The plan and data model are in `planning/feature5.md`.
+than an honest boundary. The plan and data model are kept in the local planning
+notes; they are intentionally not part of the committed submission.
 
 ### Module 7 — MCP agent surface
 
