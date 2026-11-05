@@ -154,4 +154,5 @@ vite.config.ts.timestamp-*
 # Turbo Repo
 .turbo
 planning
+.freebuff
 
